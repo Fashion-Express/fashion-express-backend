@@ -1,0 +1,33 @@
+{
+  "moduleFileExtensions": [
+    "js",
+    "mjs",
+    "json",
+    "ts"
+  ],
+  "rootDir": "..",
+  "testEnvironment": "node",
+  "testRegex": "test/schema/.*\\.e2e-spec\\.ts$",
+  "transform": {
+    "^.+\\.(t|j|m)s$": [
+      "ts-jest",
+      {
+        "isolatedModules": true,
+        "diagnostics": false,
+        "tsconfig": {
+          "allowJs": true,
+          "module": "commonjs",
+          "target": "es2022",
+          "esModuleInterop": true
+        }
+      }
+    ]
+  },
+  "transformIgnorePatterns": [
+    "node_modules/(?!(better-auth|@better-auth|@better-fetch|better-call|kysely|nanostores|jose|uncrypto|zod)/)"
+  ],
+  "maxWorkers": 1,
+  "setupFiles": [
+    "<rootDir>/test/schema/env.ts"
+  ]
+}
