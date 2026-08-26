@@ -1,0 +1,3158 @@
+{
+  "info": {
+    "name": "Fashion Express API",
+    "description": "Fashion Express backend.\n\n**Run `Auth -> Sign in` first.** Authentication is a session cookie, not a bearer token; Postman's cookie jar replays it automatically.\n\nSelect the *Fashion Express (local)* environment top-right and set `username` / `password` to a real account. There are no default logins \u2014 see api/users.md for creating the first one.\n\n**Why the collection sets an `Origin` header on every request:** once you hold a session cookie, better-auth refuses its own routes unless the request declares a trusted origin (403 MISSING_OR_NULL_ORIGIN). A collection-level pre-request script adds it from {{origin}}, which must appear in the server's TRUSTED_ORIGINS.\n\nMoney and IDs are strings, never JSON numbers (NFR-01).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// better-auth refuses its routes when a session cookie is present and no",
+          "// trusted Origin is declared (403 MISSING_OR_NULL_ORIGIN). Postman does",
+          "// not send Origin on its own, so set it here for every request.",
+          "const origin = pm.environment.get('origin') || 'http://localhost:3000';",
+          "pm.request.headers.upsert({ key: 'Origin', value: origin });"
+        ]
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000/api"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "The one route needing no session. `migrations` should match the number of files in src/database/migrations."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Sign in",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sign-in/username",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sign-in",
+                "username"
+              ]
+            },
+            "description": "Run this first. Postman stores the session cookie and replays it on every later request \u2014 there is no bearer token to copy.\n\nSaves the signed-in account's id to {{currentUserId}} so the Users requests can avoid editing you by accident.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"{{username}}\",\n  \"password\": \"{{password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('signed in', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "if (body.user && body.user.id) {",
+                  "    pm.environment.set('currentUserId', body.user.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "me"
+              ]
+            },
+            "description": "The caller's user type and full permission list. The quickest way to see why a request was refused."
+          },
+          "response": []
+        },
+        {
+          "name": "Get session (better-auth)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/get-session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "get-session"
+              ]
+            },
+            "description": "better-auth's own view. /me is what an application should use."
+          },
+          "response": []
+        },
+        {
+          "name": "List sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/list-sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "list-sessions"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Change own password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/change-password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "change-password"
+              ]
+            },
+            "description": "Requires the current password.\n\nNOTE: this really does change it. Update the environment's `password` afterwards or the next Sign in will fail.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"{{password}}\",\n  \"newPassword\": \"New-Pass-12345\",\n  \"revokeOtherSessions\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Is username available",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth/is-username-available",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "is-username-available"
+              ]
+            },
+            "description": "",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"brandnew\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Sign out",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/sign-out",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "sign-out"
+              ]
+            },
+            "description": "Clears the cookie. Everything after this returns 401 until you sign in again."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reference data",
+      "item": [
+        {
+          "name": "Catalogue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference"
+              ]
+            },
+            "description": "All twelve lists with their capabilities. Use `create`, `delete` and `editableFields` to decide which buttons to draw (FR-12.5.2)."
+          },
+          "response": []
+        },
+        {
+          "name": "List entries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "scope",
+                  "value": "supplier",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Paginated at 25 (RD-12). Returns active AND inactive entries \u2014 the admin screen needs to see what it retired."
+          },
+          "response": []
+        },
+        {
+          "name": "Picker options",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}/options?",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}",
+                "options"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "supplier",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Active entries only \u2014 what a dropdown should use.\n\nScoped lists (statuses, payment-methods) REQUIRE ?scope=, or you get a 400. Enable the scope param for those."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}/{{refId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}",
+                "{{refId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Usage",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}/{{refId}}/usage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}",
+                "{{refId}}",
+                "usage"
+              ]
+            },
+            "description": "What breaks if this entry is retired. Ask before offering Delete."
+          },
+          "response": []
+        },
+        {
+          "name": "Create entry",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}"
+              ]
+            },
+            "description": "Permission: manage_referencedata.\n\nCoded lists take code+label; named lists (job-positions, departments, categories) take `name`; statuses and payment-methods also require `scope`.\n\nStructural lists refuse this with a 400.\n\nSaves the new id to {{refId}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"code\": \"sqft\",\n  \"label\": \"Square Feet\",\n  \"sortOrder\": 6\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('refId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update entry",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}/{{refId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}",
+                "{{refId}}"
+              ]
+            },
+            "description": "Permission: manage_referencedata.\n\n`code` and `scope` are absent from the DTO \u2014 sending either is a 400. A code is fixed once created (BR-59).\n\nOn a structural list only `label` is accepted; even isActive is refused.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"Square Feet (sq ft)\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}/{{refId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}",
+                "{{refId}}"
+              ]
+            },
+            "description": "The supported way to retire an entry (BR-60). It leaves every picker while existing records keep their meaning.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete entry",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reference/{{refList}}/{{refId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reference",
+                "{{refList}}",
+                "{{refId}}"
+              ]
+            },
+            "description": "Permission: manage_referencedata. 204 on success.\n\n409 if anything uses it \u2014 deactivate instead. 400 on a structural list, where deletion is not a thing at all."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "statusCode",
+                  "value": "active",
+                  "disabled": true
+                },
+                {
+                  "key": "userTypeId",
+                  "value": "4",
+                  "disabled": true
+                },
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_user. Page size is fixed at 10 (RD-12)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "Permission: view_user."
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users"
+              ]
+            },
+            "description": "Permission: add_user. The account and its credential are written in one transaction, so the new user can sign in immediately.\n\n`employeeId` is generated and rejected if sent (FR-00.8). `salary` must be a decimal STRING.\n\nSaves the new id to {{userId}} so the requests below act on it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"username\": \"docdemo\",\n  \"password\": \"Doc-Demo-Pass-1\",\n  \"name\": \"Doc Demo\",\n  \"userTypeId\": \"4\",\n  \"phone\": \"01712345678\",\n  \"salary\": \"32000.00\",\n  \"joinDate\": \"2026-03-01\",\n  \"statusCode\": \"active\",\n  \"shopId\": \"1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "if (body.id) {",
+                  "    // Point the follow-up requests at the new account rather than",
+                  "    // at whoever is signed in.",
+                  "    pm.environment.set('userId', body.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "Permission: change_user. Send only what changes.\n\n`username`, `employeeId`, `isSuperuser` and `isManager` are all refused with 400 \u2014 privilege comes from userTypeId.\n\nCAREFUL: setting {\"statusCode\":\"inactive\"} or \"on_leave\" on your OWN account ends your session immediately, because only an active account may authenticate. Point {{userId}} at someone else before trying it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"01799999999\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Set password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/password",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}",
+                "password"
+              ]
+            },
+            "description": "Permission: change_user, except anyone may change their own. Returns 204.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"password\": \"Changed-Pass-99\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}"
+              ]
+            },
+            "description": "Permission: delete_user AND a superuser type.\n\nRarely right: anyone who has submitted a bill claim cannot be deleted (409). Deactivate with Update instead."
+          },
+          "response": []
+        },
+        {
+          "name": "User types",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/types",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "types"
+              ]
+            },
+            "description": "Permission: view_user."
+          },
+          "response": []
+        },
+        {
+          "name": "Permissions for a type",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/users/types/{{userTypeId}}/permissions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "types",
+                "{{userTypeId}}",
+                "permissions"
+              ]
+            },
+            "description": "Permission: manage_referencedata."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Shops",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/shops?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "isActive",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_shop. Each row counts the customers, products, sales and staff it holds (FR-11.2.2) \u2014 check these before deactivating."
+          },
+          "response": []
+        },
+        {
+          "name": "Options (picker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/shops/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops",
+                "options"
+              ]
+            },
+            "description": "Active shops. No permission needed: every create form must choose a shop (BR-49)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/shops/{{shopId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops",
+                "{{shopId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/shops",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops"
+              ]
+            },
+            "description": "Permission: add_shop. BR-47: the name is unique ignoring case.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Dhanmondi Branch\",\n  \"description\": \"Second outlet\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('shopId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/shops/{{shopId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops",
+                "{{shopId}}"
+              ]
+            },
+            "description": "Permission: change_shop.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Flagship store\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Deactivate",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/shops/{{shopId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops",
+                "{{shopId}}"
+              ]
+            },
+            "description": "FR-11.2.3 \u2014 the normal way to retire a shop. It leaves the pickers but keeps its history and still appears in reports.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"isActive\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/shops/{{shopId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "shops",
+                "{{shopId}}"
+              ]
+            },
+            "description": "Permission: delete_shop.\n\nBR-48: refused with a 409 if the shop holds any customer, product, sale or staff account. Deletion is only for a shop created in error and never used."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Customers",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "statusCode",
+                  "value": "active",
+                  "disabled": true
+                },
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_customer. Search covers name, customer ID, company and phone (FR-03.3)."
+          },
+          "response": []
+        },
+        {
+          "name": "Options for a shop",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/options?shopId=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "options"
+              ],
+              "query": [
+                {
+                  "key": "shopId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "The customer picker for a sale. shopId is REQUIRED \u2014 a sale's customer must belong to the sale's shop (BR-53)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Deletion impact",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/deletion-impact",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "deletion-impact"
+              ]
+            },
+            "description": "FR-03.6.1 \u2014 call before offering Delete. Deleting a customer cascades to every sale, payment and allocation they own (BR-21)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers"
+              ]
+            },
+            "description": "Permission: add_customer.\n\nThe customer number is generated (FE26082026-01) and rejected if sent. The serial is continuous \u2014 it does not restart daily (BR-46).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Karim Traders\",\n  \"phone\": \"01711111111\",\n  \"shopId\": \"1\",\n  \"company\": \"Karim & Sons\",\n  \"city\": \"Dhaka\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('customerId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "description": "Permission: change_customer.\n\n`customerId` and `shopId` are both refused with 400: the number is immutable (FR-03.2) and BR-54 fixes the shop at creation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"city\": \"Chattogram\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}"
+              ]
+            },
+            "description": "Permission: delete_customer. Irreversible and cascading \u2014 show Deletion impact first."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Inventory",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "categoryId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "lowStock",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_inventoryitem.\n\nThe `summary` block describes the current FILTER, not the current page (FR-04.4)."
+          },
+          "response": []
+        },
+        {
+          "name": "Options for a shop",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/options?shopId=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "options"
+              ],
+              "query": [
+                {
+                  "key": "shopId",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "The line-item picker for a sale. shopId is REQUIRED: a sale may only draw on its own shop's stock (BR-50)."
+          },
+          "response": []
+        },
+        {
+          "name": "Low stock",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/low-stock",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "low-stock"
+              ],
+              "query": [
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "5",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "BR-24: quantity at or below the item's own minimum. Evaluated per shop (BR-52)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{itemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{itemId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Movement history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{itemId}}/movements?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{itemId}}",
+                "movements"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                }
+              ]
+            },
+            "description": "FR-04.5, paginated at 20. READ ONLY \u2014 BR-25: movements are written only by the system and never edited or deleted.\n\n`quantity` is absolute; the sign comes from the type's `direction`."
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory"
+              ]
+            },
+            "description": "Permission: add_inventoryitem.\n\n`partCode` is unique WITHIN THE SHOP (BR-51) \u2014 two shops may each stock CLP-001.\n\nCreating with stock writes an opening Stock In movement.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"partCode\": \"CLP-002\",\n  \"partName\": \"Large clip\",\n  \"shopId\": \"1\",\n  \"unitId\": \"1\",\n  \"quantity\": \"50.500\",\n  \"boxCount\": 4,\n  \"unitPrice\": \"75.00\",\n  \"purchasePrice\": \"40.00\",\n  \"minimumStock\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('itemId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{itemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{itemId}}"
+              ]
+            },
+            "description": "Permission: change_inventoryitem.\n\nRaising the quantity records a Stock In (`Stock added via edit`); lowering it records an Adjustment (`Stock adjusted via edit`). Units and boxes are logged separately (BR-26).\n\n`shopId` is refused: BR-54 fixes it at creation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"quantity\": \"80.000\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/inventory/{{itemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "inventory",
+                "{{itemId}}"
+              ]
+            },
+            "description": "Permission: delete_inventoryitem.\n\nBR-27: refused with a 409 if the product appears on any sale line."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Suppliers",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_supplier. Search matches name or phone. Totals purchased/paid/due per supplier (FR-05.2, FR-05.4)."
+          },
+          "response": []
+        },
+        {
+          "name": "Options (picker)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers/options",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers",
+                "options"
+              ]
+            },
+            "description": "For the inventory form's supplier reference (FR-04.1.1)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers/{{supplierId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers",
+                "{{supplierId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers"
+              ]
+            },
+            "description": "Permission: add_supplier. Suppliers are NOT shop-scoped (FR-11.4).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Acme Metals\",\n  \"phone\": \"01800000000\",\n  \"email\": \"acme@example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('supplierId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Purchases",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers/{{supplierId}}/purchases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers",
+                "{{supplierId}}",
+                "purchases"
+              ]
+            },
+            "description": "`due` is derived from price minus payments and never entered (BR-28)."
+          },
+          "response": []
+        },
+        {
+          "name": "Create purchase",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers/{{supplierId}}/purchases",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers",
+                "{{supplierId}}",
+                "purchases"
+              ]
+            },
+            "description": "Permission: add_supplier.\n\nAdd `initialPayment` + `initialPaymentMethodId` to pay at the same time \u2014 BR-32 saves both atomically, and refuses an initial payment above the price.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"productName\": \"Steel sheet\",\n  \"price\": \"1000.00\",\n  \"purchaseDate\": \"2026-08-01\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    pm.environment.set('purchaseId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Add payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/purchases/{{purchaseId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "purchases",
+                "{{purchaseId}}",
+                "payments"
+              ]
+            },
+            "description": "Permission: add_supplierpayment.\n\nThree rules reject a payment:\n- BR-29: a reference number is required for LC, cheque, TT and bank; cash needs none.\n- BR-62: the method must be supplier-scoped \u2014 get it from Reference data -> Picker options with ?scope=supplier.\n- BR-30: it may not exceed the purchase's remaining due.\n\nPosts a Debit to the ledger automatically (BR-38).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"100.00\",\n  \"paymentDate\": \"2026-08-05\",\n  \"paymentMethodId\": \"{{supplierMethodId}}\",\n  \"referenceNumber\": \"LC-99881\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Pay supplier (FIFO)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/suppliers/{{supplierId}}/pay",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "suppliers",
+                "{{supplierId}}",
+                "pay"
+              ]
+            },
+            "description": "Permission: add_supplierpayment.\n\nBR-31: allocated OLDEST PURCHASE FIRST by purchase date, and may not exceed the supplier's total outstanding. Each purchase touched gets its own payment row, receipt number and ledger entry.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"900.00\",\n  \"paymentDate\": \"2026-08-26\",\n  \"paymentMethodId\": \"{{supplierMethodId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Purchase payments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/purchases/{{purchaseId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "purchases",
+                "{{purchaseId}}",
+                "payments"
+              ]
+            },
+            "description": ""
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Point {{paymentId}} at a payment that actually exists, so",
+                  "// Update/Delete payment below act on a live row rather than",
+                  "// whatever the environment happened to be left holding.",
+                  "const body = pm.response.json();",
+                  "if (Array.isArray(body) && body.length > 0) {",
+                  "    pm.environment.set('paymentId', body[0].id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update payment",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/purchase-payments/{{paymentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "purchase-payments",
+                "{{paymentId}}"
+              ]
+            },
+            "description": "BR-40 \u2014 the ledger entry is updated to match.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"150.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete payment",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/purchase-payments/{{paymentId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "purchase-payments",
+                "{{paymentId}}"
+              ]
+            },
+            "description": "BR-40 \u2014 the ledger entry is removed with it."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Sales",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "status",
+                  "value": "finalized",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                },
+                {
+                  "key": "itemType",
+                  "value": "inventory",
+                  "disabled": true
+                },
+                {
+                  "key": "createdById",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_sale.\n\nBR-01: a non-manager sees ONLY the sales they created. `totals` respects every filter; with itemType set they are apportioned by line share (BR-15)."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}"
+              ]
+            },
+            "description": "A sale the caller may not see returns 404, not 403 \u2014 learning it exists would already break BR-01."
+          },
+          "response": []
+        },
+        {
+          "name": "Line items",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}",
+                "items"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Payments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}",
+                "payments"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Create (draft)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "description": "Permission: add_sale.\n\nA stocked line with no unitPrice takes the product's current price; a positive price always wins.\n\nBR-04: a machine line needs a description, a stocked line needs a product. BR-50/BR-53: the product and customer must be in the sale's shop.\n\nAdd `initialPayment` to take money on the same form.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"shopId\": \"{{shopId}}\",\n  \"items\": [\n    {\n      \"itemType\": \"inventory\",\n      \"inventoryItemId\": \"{{itemId}}\",\n      \"quantity\": \"3\"\n    },\n    {\n      \"itemType\": \"non_inventory\",\n      \"description\": \"Lathe machine XL\",\n      \"quantity\": \"1\",\n      \"unitPrice\": \"25000.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('saleId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Create (quotation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sales",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales"
+              ]
+            },
+            "description": "Quotation mode (FR-02.2). A quotation cannot take a payment (BR-11).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"shopId\": \"{{shopId}}\",\n  \"status\": \"quote\",\n  \"items\": [\n    {\n      \"itemType\": \"inventory\",\n      \"inventoryItemId\": \"{{itemId}}\",\n      \"quantity\": \"1\",\n      \"unitPrice\": \"500.00\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('quoteId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Convert quotation",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{quoteId}}/convert",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{quoteId}}",
+                "convert"
+              ]
+            },
+            "description": "FR-02.3.1 \u2014 becomes a draft invoice, keeping items and prices."
+          },
+          "response": []
+        },
+        {
+          "name": "Finalise",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}/finalize",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}",
+                "finalize"
+              ]
+            },
+            "description": "Permission: finalize_sale \u2014 its OWN permission (FR-02.4.3).\n\nIRREVERSIBLE. Validates every line before deducting any (BR-06), deducts stock, writes a movement per product naming the sale, and starts the sale counting toward revenue.\n\n`nowLowOnStock` lists items that have just fallen to or below their minimum (FR-02.4.2)."
+          },
+          "response": []
+        },
+        {
+          "name": "Add payment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}",
+                "payments"
+              ]
+            },
+            "description": "Permission: add_salepayment. Posts a Credit to the ledger (BR-38).\n\nBR-09 total may not exceed the sale value; BR-10 no zero; BR-11 not on a cancelled sale or quotation; BR-62 the method must be customer-scoped.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"5000.00\",\n  \"paymentDate\": \"2026-08-26\",\n  \"paymentMethodId\": \"{{customerMethodId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Add line",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}/items",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}",
+                "items"
+              ]
+            },
+            "description": "On a FINALISED sale this is administrators-only (FR-02.6.1) and deducts stock immediately (BR-13).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"itemType\": \"inventory\",\n  \"inventoryItemId\": \"{{itemId}}\",\n  \"quantity\": \"1\",\n  \"unitPrice\": \"100.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Remove line",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}/items/{{saleItemId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}",
+                "items",
+                "{{saleItemId}}"
+              ]
+            },
+            "description": "On a FINALISED sale: administrators-only, and BR-12 returns the stock with a reversing movement.\n\nFR-02.6.2: if this empties the sale it reverts to draft and its payments are deleted \u2014 the response says how many."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/sales/{{saleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "sales",
+                "{{saleId}}"
+              ]
+            },
+            "description": "BR-14 \u2014 only DRAFT sales may be deleted."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Customer payments",
+      "item": [
+        {
+          "name": "Account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/account",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "account"
+              ]
+            },
+            "description": "FR-03.4 \u2014 every finalised order with totals across the whole relationship, plus the payment events and how many invoices each was spread across."
+          },
+          "response": []
+        },
+        {
+          "name": "Outstanding",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/outstanding",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "outstanding"
+              ]
+            },
+            "description": "FR-03.5.1 \u2014 offer the payment action only when this is above zero."
+          },
+          "response": []
+        },
+        {
+          "name": "Pay (FIFO allocation)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/customers/{{customerId}}/payments",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customers",
+                "{{customerId}}",
+                "payments"
+              ]
+            },
+            "description": "Permission: add_customerpayment.\n\nBR-16: applied OLDEST FINALISED SALE FIRST until exhausted. BR-17: may not exceed the customer's total outstanding \u2014 if it would, the whole event is rejected and nothing is written. BR-18: each sale touched gets its own real payment row and receipt. BR-19: grouped under one reference.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"250.00\",\n  \"paymentDate\": \"2026-08-26\",\n  \"paymentMethodId\": \"{{customerMethodId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('batchRef', pm.response.json().batchRef);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Combined receipt",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/customer-payments/{{batchRef}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "customer-payments",
+                "{{batchRef}}"
+              ]
+            },
+            "description": "BR-19 \u2014 every invoice the event settled and the amount applied to each."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Expenses",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/expenses?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "expenseCategoryId",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "month",
+                  "value": "2026-08",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "2026-08-01",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "2026-08-31",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Permission: view_expense.\n\n`filteredTotal` is the total of everything matching the filter; `ledgerBalance` is business-wide and deliberately unfiltered (FR-06.5).\n\nFR-06.4 precedence: an explicit from/to beats a single date, which beats month."
+          },
+          "response": []
+        },
+        {
+          "name": "By category",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/expenses/by-category?year=2026",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "by-category"
+              ],
+              "query": [
+                {
+                  "key": "year",
+                  "value": "2026"
+                }
+              ]
+            },
+            "description": "FR-09.1 \u2014 ranked by size. Grouped by category id; renaming a category never re-buckets history."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/expenses/{{expenseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "{{expenseId}}"
+              ]
+            },
+            "description": "FR-06.6 \u2014 if it came from an approved claim, `claim` carries who submitted and who approved it."
+          },
+          "response": []
+        },
+        {
+          "name": "Create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/expenses",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses"
+              ]
+            },
+            "description": "Permission: add_expense ONLY \u2014 BR-33 lets anyone with it create one, including a non-manager.\n\nPosts a Debit to the ledger (BR-38). `shopId` is optional; null means a business-wide cost (\u00a710.2).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-08-20\",\n  \"amount\": \"1500.00\",\n  \"description\": \"Office electricity\",\n  \"expenseCategoryId\": \"{{expenseCategoryId}}\",\n  \"paidTo\": \"DESCO\",\n  \"receiptNumber\": \"U-8891\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('expenseId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/expenses/{{expenseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "{{expenseId}}"
+              ]
+            },
+            "description": "BR-33 \u2014 MANAGERS ONLY, even for the person who created it. The ledger entry moves with the amount (BR-40).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"1600.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/expenses/{{expenseId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "{{expenseId}}"
+              ]
+            },
+            "description": "BR-33 \u2014 managers only. Removes the ledger entry too (BR-40)."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bill claims",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "status",
+                  "value": "pending",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Scope follows your permissions, not the URL: `view_my_bills` sees your own (FR-07.3), `review_bills` sees everyone's (FR-07.4).\n\n`totals` carries the pending/approved/rejected figures together."
+          },
+          "response": []
+        },
+        {
+          "name": "Get one",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims/{{claimId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims",
+                "{{claimId}}"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Submit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims"
+              ]
+            },
+            "description": "Permission: submit_bill. Starts `pending` \u2014 the status is set by the workflow and is never sent (FR-07.1.1).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"amount\": \"1200.00\",\n  \"description\": \"Client dinner\",\n  \"billDate\": \"2026-08-18\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "    pm.environment.set('claimId', pm.response.json().id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Submit with attachment",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims"
+              ]
+            },
+            "description": "FR-07.2 \u2014 pick a file for `attachment` in the Body tab.\n\nBR-34 whitelist: pdf jpg jpeg png gif bmp webp doc docx xls xlsx csv txt. Anything else is a 400.\n\nThe stored name is generated, never the uploaded one, and files live outside the app path (NFR-11).",
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "amount",
+                  "value": "800.00",
+                  "type": "text"
+                },
+                {
+                  "key": "description",
+                  "value": "Hotel",
+                  "type": "text"
+                },
+                {
+                  "key": "billDate",
+                  "value": "2026-08-22",
+                  "type": "text"
+                },
+                {
+                  "key": "attachment",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Download attachment",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims/{{claimId}}/attachment",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims",
+                "{{claimId}}",
+                "attachment"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Approve",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims/{{claimId}}/approve",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims",
+                "{{claimId}}",
+                "approve"
+              ]
+            },
+            "description": "Permission: review_bills.\n\nBR-36 \u2014 ONE action: marks it approved, records who and when, creates an expense dated to the BILL date with the employee as payee, and links the two. All of it or none of it.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"expenseCategoryId\": \"{{expenseCategoryId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reject",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims/{{claimId}}/reject",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims",
+                "{{claimId}}",
+                "reject"
+              ]
+            },
+            "description": "Permission: review_bills.\n\nBR-37 \u2014 records the reviewer and date and creates NO expense."
+          },
+          "response": []
+        },
+        {
+          "name": "Withdraw",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/bill-claims/{{claimId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "bill-claims",
+                "{{claimId}}"
+              ]
+            },
+            "description": "Only your own, and only while still pending. BR-35: a reviewed claim cannot be edited, withdrawn or processed again."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Ledger",
+      "item": [
+        {
+          "name": "List",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ledger?page=1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ledger"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "entryType",
+                  "value": "debit",
+                  "disabled": true
+                },
+                {
+                  "key": "source",
+                  "value": "expense",
+                  "disabled": true
+                },
+                {
+                  "key": "reference",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "from",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "to",
+                  "value": "",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Manager-only (FR-09.5) and READ-ONLY \u2014 BR-38: no user posts a line by hand.\n\n`totals` is the whole ledger; `filtered` is what you asked for. Render signs from `direction`, never by comparing entry_type to 'credit' (FR-12.12.2)."
+          },
+          "response": []
+        },
+        {
+          "name": "Rebuild (preview)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ledger/rebuild?preview=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ledger",
+                "rebuild"
+              ],
+              "query": [
+                {
+                  "key": "preview",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "FR-08.3 \u2014 reports what it WOULD post and writes nothing. This is the default if `preview` is omitted."
+          },
+          "response": []
+        },
+        {
+          "name": "Rebuild (write)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ledger/rebuild?preview=false",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ledger",
+                "rebuild"
+              ],
+              "query": [
+                {
+                  "key": "preview",
+                  "value": "false"
+                }
+              ]
+            },
+            "description": "Actually writes. Safe to run repeatedly: every post is ON CONFLICT DO NOTHING on (source_id, reference), so a rebuild reconciles and cannot duplicate (BR-39).\n\n`orphaned` lists ledger lines whose underlying record is gone \u2014 a rebuild only adds, so it cannot repair those."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Dashboard",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard"
+              ],
+              "query": [
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "FR-01. No permission gate: what you see follows YOUR permissions.\n\n`?shopId=` filters every figure EXCEPT expenses and bill claims, which are not shop-scoped and sit in `businessWide` with a note saying so (FR-01.8).\n\n`topProducts` covers stocked AND machine lines; machine lines group by the first meaningful line of their description (FR-01.4).\n\nA bills-only user gets `reduced: true` and just two actions (FR-01.7) \u2014 check that flag before rendering anything else."
+          },
+          "response": []
+        },
+        {
+          "name": "Low-stock count",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/low-stock-count",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "low-stock-count"
+              ],
+              "query": [
+                {
+                  "key": "shopId",
+                  "value": "1",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "FR-01.6 \u2014 the count that must appear on EVERY page. Cheap enough to call from a layout."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Reports & documents",
+      "item": [
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "summary"
+              ]
+            },
+            "description": "Manager-only (FR-09.5). The ledger balance (FR-09.2) and the per-shop breakdown (FR-09.6).\n\nNo per-shop net profit: expenses are largely business-wide, so dividing them would be arbitrary."
+          },
+          "response": []
+        },
+        {
+          "name": "Export: full workbook",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/export/full",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "export",
+                "full"
+              ]
+            },
+            "description": "FR-09.3 \u2014 five sheets: Employees, Customers, Inventory, Expenses, Payments. Money is written as numbers with a format, so totals actually sum.\n\nIn Postman use Send > 'Send and Download'."
+          },
+          "response": []
+        },
+        {
+          "name": "Export: customer summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/reports/export/customers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "reports",
+                "export",
+                "customers"
+              ]
+            },
+            "description": "FR-09.4 \u2014 every customer with invoiced/paid/due and a grand-total row built from real SUM formulas."
+          },
+          "response": []
+        },
+        {
+          "name": "Invoice / quotation PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/sales/{{saleId}}/invoice",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "documents",
+                "sales",
+                "{{saleId}}",
+                "invoice"
+              ]
+            },
+            "description": "FR-02.9. A quotation prints on its OWN template: titled QUOTATION, stating it is not an invoice, valid 30 days, and with no balance lines.\n\nBR-01 applies \u2014 an employee gets 404 for someone else's sale."
+          },
+          "response": []
+        },
+        {
+          "name": "Payment statement PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/sales/{{saleId}}/statement",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "documents",
+                "sales",
+                "{{saleId}}",
+                "statement"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Payments CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/sales/{{saleId}}/payments.csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "documents",
+                "sales",
+                "{{saleId}}",
+                "payments.csv"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Receipt PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/payments/{{paymentId}}/receipt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "documents",
+                "payments",
+                "{{paymentId}}",
+                "receipt"
+              ]
+            },
+            "description": ""
+          },
+          "response": []
+        },
+        {
+          "name": "Order history CSV",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/orders.csv",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "documents",
+                "orders.csv"
+              ]
+            },
+            "description": "Scoped by BR-01 like every other read."
+          },
+          "response": []
+        },
+        {
+          "name": "Order history PDF",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/documents/orders.pdf",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "documents",
+                "orders.pdf"
+              ]
+            },
+            "description": "Landscape, with totals over FINALISED sales only (BR-03) even though drafts are listed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Administration",
+      "item": [
+        {
+          "name": "Business settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/business-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "business-settings"
+              ]
+            },
+            "description": "Readable by anyone \u2014 the letterhead is needed to render documents."
+          },
+          "response": []
+        },
+        {
+          "name": "Update business settings",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/business-settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "business-settings"
+              ]
+            },
+            "description": "Manager-only. FR-10.1 \u2014 appears on every printed invoice and receipt from now on.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Fashion Express Ltd\",\n  \"address\": \"12 Gulshan Ave, Dhaka\",\n  \"phone\": \"+880 1700 000000\",\n  \"email\": \"hello@fashionexpress.test\",\n  \"invoiceFooter\": \"Thank you for your business.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Roles",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/roles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "roles"
+              ]
+            },
+            "description": "FR-10.2 \u2014 the four groups with their permission and account counts."
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup: info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/admin/cleanup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cleanup"
+              ]
+            },
+            "description": "Superuser only. Reports whether the tool is enabled and the exact phrases it demands."
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup: preview",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/cleanup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cleanup"
+              ]
+            },
+            "description": "FR-10.3. WITHOUT `confirmation` this previews and writes nothing (BR-43).\n\nSome targets cannot be cleared alone \u2014 clearing expenses without billClaims would leave an approved claim with no expense, which the database refuses. The tool says so up front rather than failing halfway, and never widens your selection for you.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targets\": [\n    \"expenses\",\n    \"billClaims\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cleanup: DELETE (destructive)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/admin/cleanup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "admin",
+                "cleanup"
+              ]
+            },
+            "description": "*** THIS DELETES DATA IRREVERSIBLY ***\n\nFour safeguards: BR-41 superuser only; BR-42 needs ENABLE_DATA_CLEANUP=true; BR-43 this exact phrase; BR-44 administrators and your own account are preserved unless you also send includeAdminsConfirmation with the SECOND, different phrase.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"targets\": [\n    \"expenses\",\n    \"billClaims\"\n  ],\n  \"confirmation\": \"DELETE ALL SELECTED DATA\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
