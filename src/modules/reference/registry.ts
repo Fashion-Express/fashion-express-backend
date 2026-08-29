@@ -31,6 +31,10 @@ export interface ReferenceList {
   readonly kind: ListKind;
   /** Shown on the administration screen. */
   readonly label: string;
+  /**
+   * The requirement this list implements. Internal traceability only — it is
+   * deliberately not part of any response, and never quoted in a message.
+   */
   readonly requirement: string;
   /**
    * Scoped lists are several independent vocabularies sharing a table, kept
@@ -110,9 +114,9 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     hasSortOrder: true,
     note:
       'Four independent lists sharing one table. A status may only be used by ' +
-      'the entity type it is scoped to (BR-58). Adding a sale status is allowed ' +
-      'but reaches nothing (FR-12.8.3); adding a claim status is refused at the ' +
-      'point of use (FR-12.11.2).',
+      'the entity type it is scoped to. Adding a sale status is allowed ' +
+      'but reaches nothing; adding a claim status is refused at the ' +
+      'point of use.',
   },
   {
     slug: 'payment-methods',
@@ -123,9 +127,9 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     scopes: ['customer', 'supplier', 'expense'],
     hasSortOrder: true,
     note:
-      'Three independent lists sharing one table (BR-62), which is what keeps ' +
+      'Three independent lists sharing one table, which is what keeps ' +
       'a supplier-only method such as LC off a customer receipt. A new supplier ' +
-      'method fails safe: BR-29 exempts `cash` alone, so anything else requires ' +
+      'method fails safe: `cash` alone is exempt, so anything else requires ' +
       'a reference number.',
   },
   {
@@ -136,8 +140,8 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     requirement: 'FR-12.8.2',
     hasSortOrder: true,
     note:
-      'Adding a third type is permitted here but refused at the point of use ' +
-      '(FR-12.8.4): an item type is a choice between two differently shaped ' +
+      'Adding a third type is permitted here but refused at the point of ' +
+      'use: an item type is a choice between two differently shaped ' +
       'records — one drawing on stock, one free text — so a third kind must be ' +
       'built, not listed.',
   },
@@ -152,7 +156,7 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     extraColumns: ['is_superuser', 'is_manager'],
     note:
       'A type declares the privilege it confers, and that privilege is read ' +
-      'from the type on every request (BR-56) — so changing these flags ' +
+      'from the type on every request — so changing these flags ' +
       'changes what every holder may do, immediately.',
   },
 
@@ -167,7 +171,7 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     extraColumns: ['direction'],
     readOnly: ['direction'],
     note:
-      'Label editing only (BR-61). Stock movements are written only by the ' +
+      'Label editing only. Stock movements are written only by the ' +
       'system, so a type nobody can write would never appear on a record. ' +
       '`direction` drives the +/- sign in the movement history and is fixed.',
   },
@@ -181,7 +185,7 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     extraColumns: ['direction'],
     readOnly: ['direction'],
     note:
-      'Label editing only (BR-66). `direction` is +1 for a credit and -1 for a ' +
+      'Label editing only. `direction` is +1 for a credit and -1 for a ' +
       'debit, and the running balance is computed from it — this is the one ' +
       'piece of arithmetic that defines the balance.',
   },
@@ -193,7 +197,7 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     requirement: 'FR-12.12.3 (RD-11)',
     hasSortOrder: true,
     note:
-      'Label editing only (BR-66). The ledger is written only by the system, ' +
+      'Label editing only. The ledger is written only by the system, ' +
       'and every writer targets one of these four.',
   },
 ];

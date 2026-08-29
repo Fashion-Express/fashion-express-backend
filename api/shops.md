@@ -110,7 +110,7 @@ deleted**, and the response says exactly what is in the way:
 ```json
 {
   "statusCode": 409,
-  "message": "\"Gulshan Branch\" holds 1 product(s), 2 staff account(s) and cannot be deleted. Deactivate it instead — its history stays intact and continues to appear in reports (BR-48, FR-11.2.3)."
+  "message": "\"Gulshan Branch\" holds 1 product(s), 2 staff account(s) and cannot be deleted. Deactivate it instead — its history stays intact and continues to appear in reports."
 }
 ```
 

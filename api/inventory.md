@@ -229,7 +229,7 @@ doing so would destroy the sale's record of what was actually shipped:
 ```json
 {
   "statusCode": 409,
-  "message": "This product appears on 3 sale line(s) and cannot be deleted — doing so would destroy the record of what was shipped (BR-27)."
+  "message": "This product appears on 3 sale line(s) and cannot be deleted — doing so would destroy the record of what was shipped."
 }
 ```
 

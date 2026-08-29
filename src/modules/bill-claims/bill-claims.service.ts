@@ -194,7 +194,7 @@ export class BillClaimsService {
     }
     if (claim.status_code !== 'pending') {
       throw new BadRequestException(
-        `This claim has already been ${claim.status_label.toLowerCase()} and cannot be changed (BR-35).`,
+        `This claim has already been ${claim.status_label.toLowerCase()} and cannot be changed.`,
       );
     }
 
@@ -344,7 +344,7 @@ export class BillClaimsService {
     if (claim.status_code !== 'pending') {
       throw new BadRequestException(
         `This claim has already been ${claim.status_label.toLowerCase()} and ` +
-          `cannot be processed again (BR-35).`,
+          `cannot be processed again.`,
       );
     }
     return claim;

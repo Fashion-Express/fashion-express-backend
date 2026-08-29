@@ -62,7 +62,7 @@ export class DashboardService {
       // FR-01.8 — business-wide whatever shop is selected, and flagged.
       businessWide: {
         note:
-          'Expenses and bill claims are not scoped to a shop (FR-11.4), so these ' +
+          'Expenses and bill claims are not scoped to a shop, so these ' +
           'figures cover the whole business regardless of the shop filter.',
         ...(await this.moneyOut()),
       },

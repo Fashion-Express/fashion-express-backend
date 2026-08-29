@@ -79,7 +79,7 @@ export class SalePaymentsService {
       const due = new Decimal(sale.total_amount).minus(sale.amount_paid);
       if (new Decimal(dto.amount).greaterThan(due)) {
         throw new BadRequestException(
-          `That payment exceeds the ${due.toFixed(2)} still due on this sale (BR-09).`,
+          `That payment exceeds the ${due.toFixed(2)} still due on this sale.`,
         );
       }
 
@@ -105,9 +105,7 @@ export class SalePaymentsService {
     actorId: string | null,
   ): Promise<string> {
     if (new Decimal(dto.amount).lessThanOrEqualTo(0)) {
-      throw new BadRequestException(
-        'A payment must be for more than zero (BR-10).',
-      );
+      throw new BadRequestException('A payment must be for more than zero.');
     }
 
     const method = firstRow<{ id: string; label: string }>(
@@ -120,7 +118,7 @@ export class SalePaymentsService {
     if (!method) {
       throw new BadRequestException(
         'That is not a customer payment method. A sale receipt may only use ' +
-          'methods scoped to `customer` (BR-62).',
+          'methods scoped to `customer`.',
       );
     }
 
@@ -181,7 +179,7 @@ export class SalePaymentsService {
       if (dto.amount !== undefined) {
         if (new Decimal(dto.amount).lessThanOrEqualTo(0)) {
           throw new BadRequestException(
-            'A payment must be for more than zero (BR-10).',
+            'A payment must be for more than zero.',
           );
         }
         set('amount', dto.amount);
@@ -230,13 +228,11 @@ export class SalePaymentsService {
   /** BR-11 — cancelled sales and quotations cannot take payment. */
   private assertPayable(statusCode: string): void {
     if (statusCode === 'cancelled') {
-      throw new BadRequestException(
-        'A cancelled sale cannot take a payment (BR-11).',
-      );
+      throw new BadRequestException('A cancelled sale cannot take a payment.');
     }
     if (statusCode === 'quote') {
       throw new BadRequestException(
-        'A quotation cannot take a payment (BR-11). Convert it to an invoice first.',
+        'A quotation cannot take a payment. Convert it to an invoice first.',
       );
     }
   }

@@ -152,7 +152,7 @@ export class ShopsService {
       throw new ConflictException(
         `"${shop.name}" holds ${holdings.join(', ')} and cannot be deleted. ` +
           `Deactivate it instead — its history stays intact and continues to ` +
-          `appear in reports (BR-48, FR-11.2.3).`,
+          `appear in reports.`,
       );
     }
 

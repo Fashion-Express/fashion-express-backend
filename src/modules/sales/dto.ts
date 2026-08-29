@@ -60,7 +60,7 @@ export class CreateSaleDto {
   /** BR-05 — a sale must have at least one valid line item. */
   @IsArray()
   @ArrayMinSize(1, {
-    message: 'A sale must have at least one line item (BR-05).',
+    message: 'A sale must have at least one line item.',
   })
   @ValidateNested({ each: true })
   @Type(() => SaleItemDto)

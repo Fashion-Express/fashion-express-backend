@@ -141,7 +141,7 @@ export class AdminService {
     if (!enabled) {
       throw new ForbiddenException(
         'The data cleanup tool is disabled. It must be deliberately enabled ' +
-          'with ENABLE_DATA_CLEANUP=true (BR-42).',
+          'with ENABLE_DATA_CLEANUP=true.',
       );
     }
   }
@@ -164,7 +164,7 @@ export class AdminService {
     // unrecoverable.
     if (!user.isSuperuser) {
       throw new ForbiddenException(
-        'The data cleanup tool is restricted to administrators (BR-41).',
+        'The data cleanup tool is restricted to administrators.',
       );
     }
     this.assertEnabled();
@@ -189,7 +189,7 @@ export class AdminService {
         ...(await this.ledgerWarning(targets)),
         confirmationRequired: CLEANUP_PHRASE,
         ...(confirmation !== undefined && confirmation !== CLEANUP_PHRASE
-          ? { error: 'The confirmation phrase did not match exactly (BR-43).' }
+          ? { error: 'The confirmation phrase did not match exactly.' }
           : {}),
       };
     }
@@ -319,7 +319,7 @@ export class AdminService {
     notes.push(
       includeAdmins
         ? 'Administrator accounts WILL be removed — the override phrase was given.'
-        : 'Administrator accounts are preserved (BR-44).',
+        : 'Administrator accounts are preserved.',
     );
     return notes;
   }

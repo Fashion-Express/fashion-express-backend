@@ -67,7 +67,7 @@ enabled, what it can clear, and the exact phrases it will demand.
   "targets": [{ "target": "sales", "tables": ["customer_payment_allocations", "..."] }],
   "confirmationPhrase": "DELETE ALL SELECTED DATA",
   "includeAdminsPhrase": "YES REMOVE ADMINISTRATOR ACCOUNTS",
-  "safeguards": ["BR-41 — restricted to administrators.", "..."]
+  "safeguards": ["Restricted to administrators.", "..."]
 }
 ```
 
@@ -105,7 +105,7 @@ curl -s -b $JAR -X POST $BASE/admin/cleanup \
   "totalRows": 10,
   "protections": [
     "Your own account (owner) is never deleted.",
-    "Administrator accounts are preserved (BR-44)."
+    "Administrator accounts are preserved."
   ]
 }
 ```

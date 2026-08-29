@@ -297,7 +297,7 @@ export class SalesService {
         // BR-11 — a quotation cannot take payment.
         if (status.code === 'quote') {
           throw new BadRequestException(
-            'A quotation cannot take a payment (BR-11). Convert it to an invoice first.',
+            'A quotation cannot take a payment. Convert it to an invoice first.',
           );
         }
         await this.payments.write(manager, saleId, dto.initialPayment, user.id);
@@ -331,7 +331,7 @@ export class SalesService {
     if (type.code === 'inventory') {
       if (!item.inventoryItemId) {
         throw new BadRequestException(
-          'A stocked line must reference an inventory item (BR-04).',
+          'A stocked line must reference an inventory item.',
         );
       }
       const product = firstRow<{
@@ -364,7 +364,7 @@ export class SalesService {
     } else {
       if (!description.trim()) {
         throw new BadRequestException(
-          'A machine line must carry a description (BR-04).',
+          'A machine line must carry a description.',
         );
       }
     }
@@ -460,7 +460,7 @@ export class SalesService {
     const sale = await this.findOne(id, user);
     if (sale.status_code !== 'draft') {
       throw new BadRequestException(
-        `Only draft sales may be deleted (BR-14). This one is ${sale.status_label}.`,
+        `Only draft sales may be deleted. This one is ${sale.status_label}.`,
       );
     }
     const deleted: unknown = await this.dataSource.query(
@@ -480,7 +480,7 @@ export class SalesService {
   assertMayEditFinalised(user: AuthUser): void {
     if (!user.isSuperuser) {
       throw new ForbiddenException(
-        'Editing the lines of a finalised sale is restricted to administrators (FR-02.6.1).',
+        'Editing the lines of a finalised sale is restricted to administrators.',
       );
     }
   }

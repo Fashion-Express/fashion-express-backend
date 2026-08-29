@@ -181,7 +181,7 @@ refused and nothing changes — not even the lines that could have been filled:
 ```json
 {
   "statusCode": 400,
-  "message": "Not enough stock to finalise 26-08-2026-FE-0002. Nothing has been changed (BR-06). Short: Clip (CLP-001): need 99999.000, have 77.000."
+  "message": "Not enough stock to finalise 26-08-2026-FE-0002. Nothing has been changed. Short: Clip (CLP-001): need 99999.000, have 77.000."
 }
 ```
 
@@ -224,7 +224,7 @@ remove them; the ledger entry follows both (BR-40).
 change its lines:
 
 ```json
-{ "statusCode": 403, "message": "Editing the lines of a finalised sale is restricted to administrators (FR-02.6.1)." }
+{ "statusCode": 403, "message": "Editing the lines of a finalised sale is restricted to administrators." }
 ```
 
 ### `POST /api/sales/:id/items`

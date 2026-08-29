@@ -236,9 +236,7 @@ export class ExpensesService {
         ),
       );
       if (!method) {
-        throw new BadRequestException(
-          'That is not an expense payment method (BR-62).',
-        );
+        throw new BadRequestException('That is not an expense payment method.');
       }
     }
 

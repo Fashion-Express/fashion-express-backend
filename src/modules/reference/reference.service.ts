@@ -56,7 +56,6 @@ export class ReferenceService {
       slug: list.slug,
       label: list.label,
       kind: list.kind,
-      requirement: list.requirement,
       scopes: list.scopes ?? null,
       note: list.note ?? null,
       ...capabilitiesOf(list),
@@ -169,7 +168,7 @@ export class ReferenceService {
       throw new BadRequestException(
         `"${list.label}" is a structural list: entries cannot be added. ` +
           `The system is the only writer of the records that use it, so a new ` +
-          `entry could never appear on one (${list.requirement}).`,
+          `entry could never appear on one.`,
       );
     }
 
@@ -263,8 +262,8 @@ export class ReferenceService {
       const disallowed = offered.filter((k) => k !== 'label');
       if (disallowed.length > 0) {
         throw new BadRequestException(
-          `"${list.label}" is a structural list: only the label may be edited ` +
-            `(${list.requirement}). Refused: ${disallowed.join(', ')}.`,
+          `"${list.label}" is a structural list: only the label may be edited. ` +
+            `Refused: ${disallowed.join(', ')}.`,
         );
       }
       if (dto.label === undefined) return this.findOne(slug, id);
@@ -336,8 +335,7 @@ export class ReferenceService {
 
     if (list.kind === 'structural') {
       throw new BadRequestException(
-        `"${list.label}" is a structural list: entries cannot be deleted ` +
-          `(${list.requirement}).`,
+        `"${list.label}" is a structural list: entries cannot be deleted.`,
       );
     }
 
@@ -346,7 +344,7 @@ export class ReferenceService {
       throw new ConflictException(
         `That entry is used by ${usage.total} record(s) and cannot be deleted. ` +
           `Deactivate it instead — it will disappear from selection lists while ` +
-          `every existing record keeps its meaning (BR-60).`,
+          `every existing record keeps its meaning.`,
       );
     }
 

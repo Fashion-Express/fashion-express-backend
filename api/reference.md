@@ -47,7 +47,6 @@ curl -s -b $JAR $BASE/reference
     "slug": "units",
     "label": "Units of measure",
     "kind": "coded",
-    "requirement": "FR-12.4.2 (RD-02)",
     "scopes": null,
     "note": "Extensible without a code change. Unit is required on every product.",
     "create": true,
@@ -270,7 +269,7 @@ curl -s -b $JAR -X PATCH $BASE/reference/ledger-entry-types/1 \
 
 ```json
 {
-  "message": "\"Ledger entry types\" is a structural list: only the label may be edited (FR-12.12.1 (RD-11)). Refused: isActive.",
+  "message": "\"Ledger entry types\" is a structural list: only the label may be edited. Refused: isActive.",
   "statusCode": 400
 }
 ```
@@ -296,7 +295,7 @@ curl -s -b $JAR -X DELETE $BASE/reference/units/6 -w '%{http_code}\n'
 
 ```json
 {
-  "message": "That entry is used by 2 record(s) and cannot be deleted. Deactivate it instead — it will disappear from selection lists while every existing record keeps its meaning (BR-60).",
+  "message": "That entry is used by 2 record(s) and cannot be deleted. Deactivate it instead — it will disappear from selection lists while every existing record keeps its meaning.",
   "statusCode": 409
 }
 ```

@@ -88,7 +88,7 @@ DOC, DOCX, XLS, XLSX, CSV, TXT. Anything else is refused outright:
 ```json
 {
   "statusCode": 400,
-  "message": "\".sh\" is not an accepted attachment (BR-34). Allowed: .pdf, .jpg, ..."
+  "message": "\".sh\" is not an accepted attachment. Allowed: .pdf, .jpg, ..."
 }
 ```
 
@@ -156,7 +156,7 @@ An approved or rejected claim cannot be processed again, in either direction:
 ```json
 {
   "statusCode": 400,
-  "message": "This claim has already been approved and cannot be processed again (BR-35)."
+  "message": "This claim has already been approved and cannot be processed again."
 }
 ```
 

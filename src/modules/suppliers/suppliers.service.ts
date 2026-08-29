@@ -344,7 +344,7 @@ export class SuppliersService {
       const due = new Decimal(purchase.price).minus(purchase.paid_amount);
       if (new Decimal(dto.amount).greaterThan(due)) {
         throw new BadRequestException(
-          `That payment exceeds the ${due.toFixed(2)} still due on this purchase (BR-30).`,
+          `That payment exceeds the ${due.toFixed(2)} still due on this purchase.`,
         );
       }
 
@@ -476,7 +476,7 @@ export class SuppliersService {
       let remaining = new Decimal(dto.amount);
       if (remaining.greaterThan(totalDue)) {
         throw new BadRequestException(
-          `That payment exceeds the ${totalDue.toFixed(2)} this supplier is owed (BR-31).`,
+          `That payment exceeds the ${totalDue.toFixed(2)} this supplier is owed.`,
         );
       }
 
@@ -537,7 +537,7 @@ export class SuppliersService {
     if (!method) {
       throw new BadRequestException(
         'That is not a supplier payment method. Supplier payments may only use ' +
-          'methods scoped to `supplier` (BR-62).',
+          'methods scoped to `supplier`.',
       );
     }
 
@@ -545,7 +545,7 @@ export class SuppliersService {
     // constraint `supplierpayment_reference_required` is the guarantee.
     if (method.code !== 'cash' && !dto.referenceNumber?.trim()) {
       throw new BadRequestException(
-        `A reference number is required for ${method.label} payments (BR-29). ` +
+        `A reference number is required for ${method.label} payments. ` +
           'Only cash needs none.',
       );
     }

@@ -74,7 +74,7 @@ export function attachmentFilter(
   if (!ALLOWED_EXTENSIONS.includes(extension)) {
     callback(
       new BadRequestException(
-        `"${extension || 'that file type'}" is not an accepted attachment (BR-34). ` +
+        `"${extension || 'that file type'}" is not an accepted attachment. ` +
           `Allowed: ${ALLOWED_EXTENSIONS.join(', ')}.`,
       ),
       false,

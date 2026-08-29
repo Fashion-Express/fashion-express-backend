@@ -347,7 +347,7 @@ export class InventoryService {
     if (Number(sold?.n ?? '0') > 0) {
       throw new ConflictException(
         `This product appears on ${sold!.n} sale line(s) and cannot be deleted — ` +
-          `doing so would destroy the record of what was shipped (BR-27).`,
+          `doing so would destroy the record of what was shipped.`,
       );
     }
 

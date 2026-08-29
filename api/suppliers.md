@@ -145,7 +145,7 @@ none.** Those are traceable instruments and the reference *is* the trace:
 ```json
 {
   "statusCode": 400,
-  "message": "A reference number is required for LC payments (BR-29). Only cash needs none."
+  "message": "A reference number is required for LC payments. Only cash needs none."
 }
 ```
 
@@ -163,7 +163,7 @@ refused:
 **BR-30 — a payment may not exceed the purchase's remaining due:**
 
 ```json
-{ "statusCode": 400, "message": "That payment exceeds the 650.00 still due on this purchase (BR-30)." }
+{ "statusCode": 400, "message": "That payment exceeds the 650.00 still due on this purchase." }
 ```
 
 The purchase row is locked before the check, so two payments cannot race past the
@@ -211,7 +211,7 @@ Each also posts its own ledger debit.
 It may not exceed the supplier's total outstanding:
 
 ```json
-{ "statusCode": 400, "message": "That payment exceeds the 450.00 this supplier is owed (BR-31)." }
+{ "statusCode": 400, "message": "That payment exceeds the 450.00 this supplier is owed." }
 ```
 
 The supplier row is locked first, then its purchases — parent before children.

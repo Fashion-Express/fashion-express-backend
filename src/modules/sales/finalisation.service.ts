@@ -64,7 +64,7 @@ export class FinalisationService {
       // BR-08 — a sale that is already finalised cannot be finalised again.
       if (sale.status_code === 'finalized') {
         throw new BadRequestException(
-          `${sale.sale_number} is already finalised (BR-08).`,
+          `${sale.sale_number} is already finalised.`,
         );
       }
       if (sale.status_code === 'cancelled') {
@@ -72,7 +72,7 @@ export class FinalisationService {
       }
       if (sale.status_code === 'quote') {
         throw new BadRequestException(
-          'Convert the quotation to an invoice before finalising (FR-02.3.1).',
+          'Convert the quotation to an invoice before finalising.',
         );
       }
 
@@ -88,7 +88,7 @@ export class FinalisationService {
       );
       if (Number(anyLine?.n ?? '0') === 0) {
         throw new BadRequestException(
-          'A sale must have at least one line item to be finalised (BR-05).',
+          'A sale must have at least one line item to be finalised.',
         );
       }
 
@@ -111,7 +111,7 @@ export class FinalisationService {
       if (shortfalls.length > 0) {
         throw new BadRequestException(
           `Not enough stock to finalise ${sale.sale_number}. Nothing has been ` +
-            `changed (BR-06). Short: ${shortfalls.join('; ')}.`,
+            `changed. Short: ${shortfalls.join('; ')}.`,
         );
       }
 
@@ -246,7 +246,7 @@ export class FinalisationService {
     ) {
       throw new BadRequestException(
         `Not enough stock of ${line.part_name} (${line.part_code}) to add this ` +
-          `line. Nothing has been changed (BR-13).`,
+          `line. Nothing has been changed.`,
       );
     }
 

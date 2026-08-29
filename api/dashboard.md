@@ -35,7 +35,7 @@ curl -s -b $JAR "$BASE/dashboard?shopId=1"
     "outstanding": "20150.00"
   },
   "businessWide": {
-    "note": "Expenses and bill claims are not scoped to a shop (FR-11.4), so these figures cover the whole business regardless of the shop filter.",
+    "note": "Expenses and bill claims are not scoped to a shop, so these figures cover the whole business regardless of the shop filter.",
     "expenses_this_month": "5800.00",
     "claims_awaiting_review": "1",
     "claims_awaiting_value": "800.00"

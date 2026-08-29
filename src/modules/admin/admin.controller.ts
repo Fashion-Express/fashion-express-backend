@@ -59,10 +59,10 @@ export class AdminController {
       confirmationPhrase: CLEANUP_PHRASE,
       includeAdminsPhrase: INCLUDE_ADMINS_PHRASE,
       safeguards: [
-        'BR-41 — restricted to administrators.',
-        'BR-42 — off unless ENABLE_DATA_CLEANUP=true.',
-        'BR-43 — requires an exact confirmation phrase; without it this previews.',
-        'BR-44 — administrator accounts and your own account are preserved ' +
+        'Restricted to administrators.',
+        'Off unless ENABLE_DATA_CLEANUP=true.',
+        'Requires an exact confirmation phrase; without it this previews.',
+        'Administrator accounts and your own account are preserved ' +
           'unless the second, different phrase is given.',
       ],
     };

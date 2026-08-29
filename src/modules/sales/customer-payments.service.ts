@@ -150,14 +150,12 @@ export class CustomerPaymentsService {
 
       const amount = new Decimal(dto.amount);
       if (amount.lessThanOrEqualTo(0)) {
-        throw new BadRequestException(
-          'A payment must be for more than zero (BR-10).',
-        );
+        throw new BadRequestException('A payment must be for more than zero.');
       }
       if (amount.greaterThan(totalDue)) {
         throw new BadRequestException(
-          `That payment exceeds the ${totalDue.toFixed(2)} this customer owes ` +
-            `(BR-17). Nothing has been written.`,
+          `That payment exceeds the ${totalDue.toFixed(2)} this customer ` +
+            `owes. Nothing has been written.`,
         );
       }
 
@@ -168,9 +166,7 @@ export class CustomerPaymentsService {
         ),
       );
       if (!method) {
-        throw new BadRequestException(
-          'That is not a customer payment method (BR-62).',
-        );
+        throw new BadRequestException('That is not a customer payment method.');
       }
 
       // BR-19 — the whole event is grouped under one reference.
