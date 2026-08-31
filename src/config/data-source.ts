@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { DataSource, type DataSourceOptions } from 'typeorm';
-import { databaseUrl, loadEnv } from './env';
+import { databaseSsl, databaseUrl, loadEnv } from './env';
 
 /**
  * The single TypeORM configuration, shared by the Nest application and the
@@ -18,6 +18,10 @@ export function buildDataSourceOptions(): DataSourceOptions {
   return {
     type: 'postgres',
     url: databaseUrl(env),
+
+    // NFR-07. `false` for a loopback database, TLS for anything remote — see
+    // databaseSsl(). TypeORM forwards this straight to the pg pool.
+    ssl: databaseSsl(env),
 
     // NFR-17: never, in any environment.
     synchronize: false,
