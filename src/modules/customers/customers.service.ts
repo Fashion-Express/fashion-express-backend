@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
+import {
+  CUSTOMER_CONTACTS,
+  assertContactsAreFree,
+} from '../../common/contact-uniqueness';
 import { nextCustomerId } from '../../common/identifiers';
 import { PAGE_SIZE, type Page, toPage } from '../../common/pagination';
 import { affectedRows, firstRow, rowsOf } from '../../common/sql';
@@ -133,6 +137,7 @@ export class CustomersService {
     actorId: string | null,
   ): Promise<CustomerRow> {
     const id = await this.transactions.run(async (manager) => {
+      await assertContactsAreFree(manager, CUSTOMER_CONTACTS, dto);
       const statusId = await this.statusId(manager, dto.statusCode ?? 'active');
       const customerId = await nextCustomerId(manager);
 
@@ -147,8 +152,11 @@ export class CustomersService {
           dto.shopId,
           dto.name,
           dto.company ?? '',
-          dto.email ?? '',
-          dto.phone,
+          // Trimmed to match the indexes, which key on btrim(): storing the
+          // untrimmed value would leave ' 017' looking different from '017'
+          // everywhere except the constraint.
+          (dto.email ?? '').trim(),
+          dto.phone.trim(),
           dto.address ?? '',
           dto.city ?? '',
           dto.notes ?? '',
@@ -167,6 +175,16 @@ export class CustomersService {
     dto: UpdateCustomerDto,
     actorId: string | null,
   ): Promise<CustomerRow> {
+    // The same rule on the way in as on creation, minus this customer's own
+    // row — re-saving a record without touching its phone must not report the
+    // record against itself.
+    await assertContactsAreFree(
+      this.dataSource.manager,
+      CUSTOMER_CONTACTS,
+      dto,
+      id,
+    );
+
     const sets: string[] = [];
     const params: unknown[] = [];
     const set = (column: string, value: unknown) => {
@@ -183,7 +201,11 @@ export class CustomersService {
       ['city', 'city'],
       ['notes', 'notes'],
     ] as const) {
-      if (dto[key] !== undefined) set(column, dto[key]);
+      if (dto[key] === undefined) continue;
+      // As in create(): the two contact fields are stored trimmed, because the
+      // indexes that keep them unique key on btrim().
+      const value = dto[key];
+      set(column, key === 'phone' || key === 'email' ? value.trim() : value);
     }
     if (dto.statusCode !== undefined) {
       set(

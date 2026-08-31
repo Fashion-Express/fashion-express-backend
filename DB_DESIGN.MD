@@ -383,8 +383,23 @@ CREATE INDEX idx_customers_shop   ON customers (shop_id);           -- FR-11.5.1
 surrogate `id` is what every foreign key points at, so a change of format in future never
 requires touching referencing rows.
 
-Deliberately **not unique**: `email` and `phone`. Two branches of one company share a phone
-number often enough that a unique constraint would block legitimate records.
+**`email` and `phone` are unique** (migration 018, `uq_customers_phone` and
+`uq_customers_email_ci`). This reverses the original decision recorded here, which left both
+free on the grounds that two branches of one company often share a phone number. In practice the
+same person was being entered twice and appearing as two customers with two balances, and the
+business asked for the duplicate to be refused; the shared-number case is handled by editing the
+one record instead.
+
+Both indexes are **partial** — `WHERE btrim(...) <> ''` — because email is optional and stored as
+`''` when absent (§1); without that, exactly one customer in the business could be left without an
+address. `phone` is indexed on `btrim(phone)` so trailing space cannot smuggle a duplicate
+through, and `email` on `lower(btrim(email))` because case does not make a second mailbox.
+
+Uniqueness is **global, not per shop**, following `customer_id` rather than `part_code` (§5): a
+per-shop rule would still let the same person be registered once in each branch, which is the
+duplicate this exists to stop. Normalisation stops at trimming — whether `+8801700000000` and
+`01700000000` are one subscriber is a business question, and answering it later means a generated
+column and another index, not a change to these.
 
 **`customer_id` stays globally unique, not per shop.** A customer number identifies one party to
 the business; two shops issuing `FE19082026-01` to different people would make every receipt and
@@ -995,7 +1010,20 @@ CREATE TABLE suppliers (
 
     CONSTRAINT supplier_name_not_blank CHECK (btrim(name) <> '')   -- [H]
 );
+
+-- Migration 019. One supplier per number and per mailbox.
+CREATE UNIQUE INDEX uq_suppliers_phone
+    ON suppliers (btrim(phone))        WHERE btrim(phone) <> '';
+CREATE UNIQUE INDEX uq_suppliers_email_ci
+    ON suppliers (lower(btrim(email))) WHERE btrim(email) <> '';
 ```
+
+`phone` and `email` are **unique**, the same rule and the same shape customers
+carry (§4): partial, so a blank email is not a duplicate of a blank email;
+`btrim`, so trailing space cannot smuggle a second record through; `lower` on
+email, because case does not make a second mailbox. Unlike customers there is no
+per-shop question to settle — suppliers are not shop-scoped at all (FR-11.4), so
+a supplier's number is unique across the business by construction.
 
 ### `supplier_purchases`
 

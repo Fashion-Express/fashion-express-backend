@@ -61,6 +61,27 @@ curl -s -b $JAR -X POST $BASE/suppliers \
 `name` and `phone` are required. Deleting a supplier **cascades** to its
 purchases and their payments — that history belongs to the supplier.
 
+### One supplier per phone number and per email address
+
+A repeat is refused with **409**, naming who already holds it so the existing
+record can be found and edited:
+
+```json
+{
+  "message": "That phone number already belongs to Acme Metals. Update that supplier instead of creating a second record.",
+  "error": "Conflict",
+  "statusCode": 409
+}
+```
+
+Both fields are reported together when both are taken. Comparison ignores
+surrounding spaces, and email ignores letter case, so `Sales@Acme.test` and
+`sales@acme.test` are one mailbox. Values are stored trimmed.
+
+`email` stays optional and blank is never a duplicate of blank; `PATCH` applies
+the same rule, excluding the supplier's own row so re-saving a record is safe.
+Customers carry the identical rule — see [customers.md](customers.md).
+
 ---
 
 ## `GET /api/suppliers/:id/purchases`

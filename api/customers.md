@@ -77,6 +77,28 @@ curl -s -b $JAR -X POST $BASE/customers \
 
 `name`, `phone` and `shopId` are required; everything else is optional.
 
+### One customer per phone number and per email address
+
+Both are unique **across the whole business**, not within a shop — the same
+person registered once in each branch is exactly the duplicate this prevents.
+A repeat is refused with **409** and the answer names who already holds it, so
+the existing record can be found and edited:
+
+```json
+{
+  "message": "That phone number already belongs to Niren Costa (FE31082026-02). Update that customer instead of creating a second record.",
+  "error": "Conflict",
+  "statusCode": 409
+}
+```
+
+Both fields are reported together when both are taken. Comparison ignores
+surrounding spaces, and email ignores letter case, so `Orders@Acme.test` and
+`orders@acme.test` are one mailbox. Values are stored trimmed.
+
+`email` stays optional and blank is never a duplicate of blank; `PATCH` applies
+the same rule, excluding the customer's own row so re-saving a record is safe.
+
 ### The customer number
 
 `customer_id` is issued here and **never accepted from the caller** (FR-03.2).

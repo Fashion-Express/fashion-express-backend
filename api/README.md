@@ -141,14 +141,36 @@ which makes support conversations concrete:
 }
 ```
 
+A reference to a record that does not exist is **422**, and the message names
+both the thing and the field to fix:
+
+```json
+{
+  "statusCode": 422,
+  "message": "That shop does not exist. Check the \"shopId\" value.",
+  "constraint": "customers_shop_id_fkey"
+}
+```
+
+That is the opposite case from **409**, where the record exists and is still in
+use — deleting it is what was refused:
+
+```json
+{
+  "statusCode": 409,
+  "message": "This record is still used by existing products. Deactivate it instead of deleting it.",
+  "constraint": "inventory_items_unit_id_fkey"
+}
+```
+
 | Status | Means |
 |--------|-------|
 | 400 | The request body failed validation |
 | 401 | No session, or it expired — sign in again |
 | 403 | Signed in, but the user's type does not grant this |
 | 404 | No such record |
-| 409 | A uniqueness or referential rule refused it |
-| 422 | A business rule (`CHECK` constraint) refused it |
+| 409 | A uniqueness rule refused it, or the record is still in use |
+| 422 | A business rule refused it, or a reference points at nothing |
 | 429 | Locked out after 5 failed sign-ins (see auth.md) |
 
 ## Postman

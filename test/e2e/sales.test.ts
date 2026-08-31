@@ -110,7 +110,7 @@ before(async () => {
 
   app = await createApp();
   await app.init();
-  server = app.getHttpServer() as Server;
+  server = app.getHttpServer();
 
   admin = await signIn('salesadmin', 'Sales-Test-Pass-1');
   manager = await signIn('salesmgr', 'Sales-Test-Pass-1');
@@ -671,12 +671,16 @@ describe('FR-03.5 customer lump-sum payment', () => {
   async function customerWithInvoices(
     amounts: string[],
   ): Promise<{ customer: string; sales: string[] }> {
+    // The phone varies with the customer number: a customer's phone is unique
+    // (migration 018), and this helper runs once per test in the suite.
+    // Kept short: `phone` is varchar(20) and the prefix costs four of them.
+    const token = `${Date.now() % 1_000_000_000}${Math.floor(Math.random() * 1000)}`;
     const rows = await query<{ id: string }>(
       `INSERT INTO customers (customer_id, shop_id, name, phone, status_id)
-       SELECT $1, 1, 'FIFO Customer', '017',
+       SELECT $1, 1, 'FIFO Customer', $2,
               (SELECT id FROM statuses WHERE scope='customer' AND code='active')
        RETURNING id::text`,
-      [`FE-FIFO-${Date.now()}`],
+      [`FE-FIFO-${token}`, `017-${token}`],
     );
     const customer = rows[0].id;
     const sales: string[] = [];

@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import { Pool } from 'pg';
-import { databaseUrl, loadEnv } from './env';
+import { databaseSsl, databaseUrl, loadEnv } from './env';
 
 /**
  * The connection pool better-auth uses.
@@ -12,7 +12,12 @@ import { databaseUrl, loadEnv } from './env';
  * This is a second pool alongside TypeORM's, which the two libraries require,
  * but it points at the same database: one schema, one set of migrations.
  */
+const env = loadEnv();
+
 export const authPool = new Pool({
-  connectionString: databaseUrl(loadEnv()),
+  connectionString: databaseUrl(env),
+  // NFR-07 — the same TLS decision as the TypeORM pool. This pool carries the
+  // login traffic, so it is the last one that should be reachable in clear.
+  ssl: databaseSsl(env),
   max: 5,
 });

@@ -9,7 +9,12 @@ import {
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { QueryFailedError } from 'typeorm';
-import { CONSTRAINT_MESSAGES, SQLSTATE_MESSAGES } from './constraint-messages';
+import {
+  CONSTRAINT_MESSAGES,
+  SQLSTATE_MESSAGES,
+  describeMissingValue,
+  describeReferenceViolation,
+} from './constraint-messages';
 
 /** The shape `pg` gives a driver error. */
 interface PostgresError extends Error {
@@ -47,10 +52,14 @@ export class DatabaseExceptionFilter implements ExceptionFilter {
       }: ${exception.message}`,
     );
 
+    // A named rule wins: those sentences say *why* the rule exists (BR-50 is
+    // "another shop's stock", not "that product does not exist") and their
+    // status codes are part of the API. Everything else is derived.
+    const named = constraint ? CONSTRAINT_MESSAGES[constraint] : undefined;
+    const derived = named ? undefined : this.derive(code, driver);
+
     const message =
-      (constraint && CONSTRAINT_MESSAGES[constraint]) ??
-      (code && SQLSTATE_MESSAGES[code]) ??
-      undefined;
+      named ?? derived?.message ?? (code && SQLSTATE_MESSAGES[code]);
 
     if (!message) {
       // Not a rule we recognise — do not guess, and do not echo SQL.
@@ -61,7 +70,7 @@ export class DatabaseExceptionFilter implements ExceptionFilter {
       return;
     }
 
-    const status = statusForSqlState(code);
+    const status = derived?.status ?? statusForSqlState(code);
     response.status(status).json({
       statusCode: status,
       message,
@@ -69,12 +78,49 @@ export class DatabaseExceptionFilter implements ExceptionFilter {
       constraint: constraint ?? undefined,
     });
   }
+
+  /**
+   * Build a sentence for a violation no constraint name covers.
+   *
+   * Referential failures are the ones worth the effort: they arrive in two
+   * opposite directions through the same constraint, and the generic sentence
+   * described the wrong one roughly half the time. Direction also decides the
+   * status — a `shopId` that matches no shop is bad input (422), while a shop
+   * that other records still point at is a genuine conflict (409).
+   */
+  private derive(
+    code: string | undefined,
+    driver: PostgresError | undefined,
+  ): { message: string; status: number } | undefined {
+    // 23503 foreign_key_violation, 23001 restrict_violation.
+    if (code === '23503' || code === '23001') {
+      const violation = describeReferenceViolation(driver?.detail);
+      if (!violation) return undefined;
+      return {
+        message: violation.message,
+        status:
+          violation.kind === 'missing'
+            ? HttpStatus.UNPROCESSABLE_ENTITY
+            : HttpStatus.CONFLICT,
+      };
+    }
+
+    if (code === '23502') {
+      const message = describeMissingValue(driver?.column);
+      return message
+        ? { message, status: HttpStatus.UNPROCESSABLE_ENTITY }
+        : undefined;
+    }
+
+    return undefined;
+  }
 }
 
 function statusForSqlState(code: string | undefined): number {
   switch (code) {
     case '23505': // unique violation
     case '23503': // foreign key violation
+    case '23001': // restrict violation — ON DELETE RESTRICT refused it
       return HttpStatus.CONFLICT;
     case '23502': // not null violation
     case '23514': // check violation
