@@ -52,6 +52,10 @@ export const CONSTRAINT_MESSAGES: Record<string, string> = {
   // ---- Customers (§4) ----
   customers_customer_id_key: 'That customer ID is already in use.', // BR-45
   customer_name_not_blank: 'A customer must have a name.',
+  // The service checks both first and names who already holds the value; these
+  // are what a race past that check reports.
+  uq_customers_phone: 'Another customer already has that phone number.',
+  uq_customers_email_ci: 'Another customer already has that email address.',
   fk_customers_status: 'That is not a valid customer status.', // BR-58
   customers_status_scope_pinned: 'That status does not apply to customers.', // BR-58
 
@@ -71,6 +75,10 @@ export const CONSTRAINT_MESSAGES: Record<string, string> = {
   supplierpayment_reference_required:
     'A reference number is required for LC, cheque, TT, and bank payments.', // BR-29
   supplier_name_not_blank: 'A supplier must have a name.',
+  // As with customers: the service names who already holds the value, and these
+  // are what a race past that check reports.
+  uq_suppliers_phone: 'Another supplier already has that phone number.',
+  uq_suppliers_email_ci: 'Another supplier already has that email address.',
   fk_supplierpayment_method: 'That is not a valid supplier payment method.', // BR-62, BR-64
 
   // ---- Expenses (§9) ----

@@ -49,9 +49,9 @@ npm run migration:revert     # roll back the last one
 npm run db:reset             # drop schema + re-apply everything
 npm run seed:admin           # first Owner account (the API cannot create it)
 
-npm run test:db              # both suites (237 tests)
-npm run test:schema          # 58 constraint/trigger/message tests (Jest)
-npm run test:e2e             # 179 API tests (node:test via ts-node)
+npm run test:db              # both suites (265 tests)
+npm run test:schema          # 71 constraint/trigger/message tests (Jest)
+npm run test:e2e             # 194 API tests (node:test via ts-node)
 ```
 
 Both suites need `DATABASE_URL_TEST` and will truncate that database.
@@ -170,6 +170,11 @@ These have each cost real debugging time.
   constraint name to a message in `common/constraint-messages.ts`. Match on the
   **constraint name, never the table** — `sale_not_overpaid` reports against `sales`,
   not `sale_payments`, because the trigger propagates the payment into the sale.
+- **Phone and email are unique on `customers` and `suppliers`** (migrations 018,
+  019). Four partial indexes do the enforcing; `common/contact-uniqueness.ts` is
+  the readable half, naming who already holds the value. Its `btrim`/`lower` must
+  keep mirroring the index expressions — if they drift, the check starts passing
+  writes the database then refuses. Both tables store the two fields trimmed.
 - **A foreign key fails in two opposite directions and needs two messages.** The
   same constraint refuses *"you referenced a shop that does not exist"* (422) and
   *"this shop is still in use, deactivate it"* (409). A name in

@@ -5,6 +5,10 @@ import {
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource, EntityManager } from 'typeorm';
+import {
+  SUPPLIER_CONTACTS,
+  assertContactsAreFree,
+} from '../../common/contact-uniqueness';
 import { Decimal } from '../../common/decimal';
 import { supplierPaymentNumber } from '../../common/identifiers';
 import { PAGE_SIZE, type Page, toPage } from '../../common/pagination';
@@ -107,16 +111,39 @@ export class SuppliersService {
     return row;
   }
 
+  /**
+   * FR-05.1 — register a supplier.
+   *
+   * The check and the insert share a transaction so the gap between "nobody has
+   * this number" and "this supplier has it" cannot be entered twice at once;
+   * `uq_suppliers_phone` closes what is left of it either way.
+   *
+   * Phone and email are stored trimmed, because the indexes that keep them
+   * unique key on `btrim()` — an untrimmed value would look different from the
+   * one it collides with everywhere except the constraint.
+   */
   async create(
     dto: CreateSupplierDto,
     actorId: string | null,
   ): Promise<SupplierRow> {
-    const inserted: unknown = await this.dataSource.query(
-      `INSERT INTO suppliers (name, phone, address, email, created_by_id, updated_by_id)
-       VALUES ($1, $2, $3, $4, $5, $5) RETURNING id::text`,
-      [dto.name, dto.phone, dto.address ?? '', dto.email ?? '', actorId],
-    );
-    return this.findOne(firstRow<{ id: string }>(inserted)!.id);
+    const id = await this.transactions.run(async (manager) => {
+      await assertContactsAreFree(manager, SUPPLIER_CONTACTS, dto);
+
+      const inserted: unknown = await manager.query(
+        `INSERT INTO suppliers (name, phone, address, email, created_by_id, updated_by_id)
+         VALUES ($1, $2, $3, $4, $5, $5) RETURNING id::text`,
+        [
+          dto.name,
+          dto.phone.trim(),
+          dto.address ?? '',
+          (dto.email ?? '').trim(),
+          actorId,
+        ],
+      );
+      return firstRow<{ id: string }>(inserted)!.id;
+    });
+
+    return this.findOne(id);
   }
 
   async update(
@@ -124,6 +151,15 @@ export class SuppliersService {
     dto: UpdateSupplierDto,
     actorId: string | null,
   ): Promise<SupplierRow> {
+    // Excluding this supplier's own row: re-saving a record without touching
+    // its phone must not report the record against itself.
+    await assertContactsAreFree(
+      this.dataSource.manager,
+      SUPPLIER_CONTACTS,
+      dto,
+      id,
+    );
+
     const sets: string[] = [];
     const params: unknown[] = [];
     const set = (column: string, value: unknown) => {
@@ -131,7 +167,10 @@ export class SuppliersService {
       sets.push(`${column} = $${params.length}`);
     };
     for (const key of ['name', 'phone', 'address', 'email'] as const) {
-      if (dto[key] !== undefined) set(key, dto[key]);
+      if (dto[key] === undefined) continue;
+      // As in create(): trimmed, to match the indexes.
+      const value = dto[key];
+      set(key, key === 'phone' || key === 'email' ? value.trim() : value);
     }
     if (sets.length === 0) return this.findOne(id);
 

@@ -74,7 +74,7 @@ before(async () => {
 
   app = await createApp();
   await app.init();
-  server = app.getHttpServer() as Server;
+  server = app.getHttpServer();
 
   const signIn = await request(server)
     .post('/api/auth/sign-in/username')
@@ -141,12 +141,12 @@ describe('FR-03 customers', () => {
   test('issues a continuous customer number (RD-01, BR-46)', async () => {
     const first = await post('/api/customers', {
       name: 'Serial One',
-      phone: '017',
+      phone: '01710000001',
       shopId: '1',
     });
     const second = await post('/api/customers', {
       name: 'Serial Two',
-      phone: '017',
+      phone: '01710000002',
       shopId: '1',
     });
 
@@ -159,7 +159,7 @@ describe('FR-03 customers', () => {
   test('BR-54 fixes the shop at creation', async () => {
     const created = await post('/api/customers', {
       name: 'Fixed Shop',
-      phone: '017',
+      phone: '01710000003',
       shopId: '1',
     });
     const response = await patch(`/api/customers/${created.body.id}`, {
@@ -171,7 +171,7 @@ describe('FR-03 customers', () => {
   test('the customer number is never editable (FR-03.2)', async () => {
     const created = await post('/api/customers', {
       name: 'No Rename',
-      phone: '017',
+      phone: '01710000004',
       shopId: '1',
     });
     const response = await patch(`/api/customers/${created.body.id}`, {
@@ -189,6 +189,131 @@ describe('FR-03 customers', () => {
       shopTwo.body.some((b: { id: string }) => b.id === a.id),
     );
     assert.deepEqual(overlap, []);
+  });
+
+  /**
+   * A phone number and an email address each identify one customer.
+   *
+   * Reported from the field: the same person could be entered twice and end up
+   * as two records with two balances. The guarantee is a pair of unique indexes
+   * (migration 018); these assert the sentence the API gives back, which names
+   * who already holds the value so the duplicate can be found and edited.
+   */
+  test('refuses a second customer on the same phone number', async () => {
+    const first = await post('/api/customers', {
+      name: 'Niren Costa',
+      phone: '01548593022',
+      shopId: '1',
+    });
+    assert.equal(first.status, 201);
+
+    const second = await post('/api/customers', {
+      name: 'N. Costa',
+      phone: '01548593022',
+      shopId: '1',
+    });
+    assert.equal(second.status, 409);
+    assert.match(second.body.message, /phone number already belongs to/i);
+    assert.match(second.body.message, /Niren Costa/);
+    assert.match(second.body.message, /FE\d{8}-\d+/);
+  });
+
+  test('refuses it across shops too — the rule is not per shop', async () => {
+    await post('/api/customers', {
+      name: 'Cross Shop',
+      phone: '01548500001',
+      shopId: '1',
+    });
+    const other = await post('/api/customers', {
+      name: 'Cross Shop Again',
+      phone: '01548500001',
+      shopId: '2',
+    });
+    assert.equal(other.status, 409);
+  });
+
+  test('refuses a second customer on the same email, ignoring case', async () => {
+    await post('/api/customers', {
+      name: 'Mailbox One',
+      phone: '01548500002',
+      email: 'orders@acme.test',
+      shopId: '1',
+    });
+    const second = await post('/api/customers', {
+      name: 'Mailbox Two',
+      phone: '01548500003',
+      email: 'Orders@Acme.TEST',
+      shopId: '1',
+    });
+    assert.equal(second.status, 409);
+    assert.match(second.body.message, /email address already belongs to/i);
+  });
+
+  test('a number differing only by spaces is the same number', async () => {
+    await post('/api/customers', {
+      name: 'Spaced',
+      phone: '01548500004',
+      shopId: '1',
+    });
+    const second = await post('/api/customers', {
+      name: 'Spaced Again',
+      phone: '  01548500004  ',
+      shopId: '1',
+    });
+    assert.equal(second.status, 409);
+  });
+
+  test('stores the trimmed value, so the record matches the rule', async () => {
+    const created = await post('/api/customers', {
+      name: 'Trimmed',
+      phone: '  01548500005  ',
+      email: '  Trim@Acme.test  ',
+      shopId: '1',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.phone, '01548500005');
+    assert.equal(created.body.email, 'Trim@Acme.test');
+  });
+
+  test('email stays optional — blank is not a duplicate of blank', async () => {
+    const a = await post('/api/customers', {
+      name: 'No Mail One',
+      phone: '01548500006',
+      shopId: '1',
+    });
+    const b = await post('/api/customers', {
+      name: 'No Mail Two',
+      phone: '01548500007',
+      shopId: '1',
+    });
+    assert.equal(a.status, 201);
+    assert.equal(b.status, 201);
+  });
+
+  test('an update may not take another customer’s number', async () => {
+    const target = await post('/api/customers', {
+      name: 'Update Target',
+      phone: '01548500008',
+      shopId: '1',
+    });
+    const response = await patch(`/api/customers/${target.body.id}`, {
+      phone: '01548593022',
+    });
+    assert.equal(response.status, 409);
+  });
+
+  test('but a customer may keep its own number through an edit', async () => {
+    const target = await post('/api/customers', {
+      name: 'Self Edit',
+      phone: '01548500009',
+      shopId: '1',
+    });
+    const response = await patch(`/api/customers/${target.body.id}`, {
+      name: 'Self Edit Renamed',
+      phone: '01548500009',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.body.name, 'Self Edit Renamed');
   });
 
   /** FR-03.6.1 — the confirmation screen counts what will be destroyed. */
@@ -348,9 +473,107 @@ describe('FR-05 suppliers and purchases', () => {
   before(async () => {
     const created = await post('/api/suppliers', {
       name: `Acme ${Date.now()}`,
-      phone: '01800000000',
+      phone: `018-${Date.now() % 1_000_000_000}`,
     });
     supplierId = created.body.id;
+  });
+
+  /**
+   * One supplier per phone number and per email address — the same rule
+   * customers got in migration 018, guaranteed by `uq_suppliers_phone` and
+   * `uq_suppliers_email_ci` and answered here with a sentence naming who
+   * already holds the value.
+   */
+  test('refuses a second supplier on the same phone number', async () => {
+    const first = await post('/api/suppliers', {
+      name: 'Karim Fabrics',
+      phone: '01555000001',
+    });
+    assert.equal(first.status, 201);
+
+    const second = await post('/api/suppliers', {
+      name: 'Karim Fabrics Ltd',
+      phone: '01555000001',
+    });
+    assert.equal(second.status, 409);
+    assert.match(second.body.message, /phone number already belongs to/i);
+    assert.match(second.body.message, /Karim Fabrics/);
+    assert.match(second.body.message, /instead of creating a second record/i);
+  });
+
+  test('refuses a second supplier on the same email, ignoring case', async () => {
+    await post('/api/suppliers', {
+      name: 'Mail Metals',
+      phone: '01555000002',
+      email: 'sales@metals.test',
+    });
+    const second = await post('/api/suppliers', {
+      name: 'Mail Metals Two',
+      phone: '01555000003',
+      email: 'Sales@Metals.TEST',
+    });
+    assert.equal(second.status, 409);
+    assert.match(second.body.message, /email address already belongs to/i);
+  });
+
+  test('a number differing only by spaces is the same number', async () => {
+    await post('/api/suppliers', {
+      name: 'Spaced Supply',
+      phone: '01555000004',
+    });
+    const second = await post('/api/suppliers', {
+      name: 'Spaced Supply Two',
+      phone: '  01555000004  ',
+    });
+    assert.equal(second.status, 409);
+  });
+
+  test('stores the trimmed value, so the record matches the rule', async () => {
+    const created = await post('/api/suppliers', {
+      name: 'Trimmed Supply',
+      phone: '  01555000005  ',
+      email: '  Trim@Metals.test  ',
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.body.phone, '01555000005');
+    assert.equal(created.body.email, 'Trim@Metals.test');
+  });
+
+  test('email stays optional — blank is not a duplicate of blank', async () => {
+    const a = await post('/api/suppliers', {
+      name: 'No Mail Supply One',
+      phone: '01555000006',
+    });
+    const b = await post('/api/suppliers', {
+      name: 'No Mail Supply Two',
+      phone: '01555000007',
+    });
+    assert.equal(a.status, 201);
+    assert.equal(b.status, 201);
+  });
+
+  test('an update may not take another supplier’s number', async () => {
+    const target = await post('/api/suppliers', {
+      name: 'Update Target Supply',
+      phone: '01555000008',
+    });
+    const response = await patch(`/api/suppliers/${target.body.id}`, {
+      phone: '01555000001',
+    });
+    assert.equal(response.status, 409);
+  });
+
+  test('but a supplier may keep its own number through an edit', async () => {
+    const target = await post('/api/suppliers', {
+      name: 'Self Edit Supply',
+      phone: '01555000009',
+    });
+    const response = await patch(`/api/suppliers/${target.body.id}`, {
+      name: 'Self Edit Supply Renamed',
+      phone: '01555000009',
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.body.name, 'Self Edit Supply Renamed');
   });
 
   test('BR-32 saves a purchase and its initial payment atomically', async () => {
@@ -445,7 +668,7 @@ describe('FR-05 suppliers and purchases', () => {
   test('BR-31 allocates a supplier payment oldest purchase first', async () => {
     const supplier = await post('/api/suppliers', {
       name: `FIFO ${Date.now()}`,
-      phone: '018',
+      phone: `018-fifo-${Date.now() % 1_000_000}`,
     });
     const id = supplier.body.id;
 
