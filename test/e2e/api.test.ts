@@ -74,7 +74,7 @@ before(async () => {
 
   app = await createApp();
   await app.init();
-  server = app.getHttpServer() as Server;
+  server = app.getHttpServer();
 
   ownerCookie = await signIn('e2eowner', OWNER_PW);
   employeeCookie = await signIn('e2estaff', EMPLOYEE_PW);
@@ -346,4 +346,89 @@ describe('immutable and non-existent fields', () => {
       assert.equal(response.status, 400);
     });
   }
+});
+
+/**
+ * What a referential failure looks like from the client's side.
+ *
+ * Reported from Postman: `POST /api/customers` with a `shopId` no shop has
+ * came back 409 *"still referenced by other records … Deactivate it instead of
+ * deleting it"* — the advice for deleting a row that is in use, which is the
+ * opposite of what happened. One constraint covers both directions and the
+ * message only described one. The schema suite proves the derivation against
+ * PostgreSQL; this proves the wiring reaches the response.
+ */
+describe('referential errors read as validation, not as deletion advice', () => {
+  test('a shopId matching no shop names the shop and the field', async () => {
+    const response = await request(server)
+      .post('/api/customers')
+      .set('Cookie', ownerCookie)
+      .send({ name: 'Niren Costa', phone: '01548593022', shopId: '999999' });
+
+    assert.equal(response.status, 422);
+    assert.equal(
+      response.body.message,
+      'That shop does not exist. Check the "shopId" value.',
+    );
+    assert.equal(response.body.constraint, 'customers_shop_id_fkey');
+    // The old message pointed the user at the wrong remedy entirely.
+    assert.doesNotMatch(response.body.message, /Deactivate/);
+  });
+
+  test('so does a customerId matching no customer', async () => {
+    const response = await request(server)
+      .post('/api/sales')
+      .set('Cookie', ownerCookie)
+      .send({
+        customerId: '999999',
+        shopId: '1',
+        items: [
+          {
+            itemType: 'non_inventory',
+            description: 'Tailoring',
+            quantity: '1',
+            unitPrice: '100',
+          },
+        ],
+      });
+
+    assert.equal(response.status, 422);
+    assert.equal(
+      response.body.message,
+      'That customer does not exist. Check the "customerId" value.',
+    );
+  });
+
+  /**
+   * A constraint with a message of its own keeps it — and keeps its status.
+   * BR-53 is not "no such customer", it is "not *this shop's* customer", and
+   * only the named entry can say so.
+   */
+  test('a named constraint still wins over the derived sentence', async () => {
+    const other = await query<{ id: string }>(
+      `SELECT id::text FROM customers WHERE shop_id = 2 LIMIT 1`,
+    );
+    const response = await request(server)
+      .post('/api/sales')
+      .set('Cookie', ownerCookie)
+      .send({
+        customerId: other[0].id,
+        shopId: '1',
+        items: [
+          {
+            itemType: 'non_inventory',
+            description: 'Tailoring',
+            quantity: '1',
+            unitPrice: '100',
+          },
+        ],
+      });
+
+    assert.equal(response.status, 409);
+    assert.equal(response.body.constraint, 'fk_sale_customer_shop');
+    assert.equal(
+      response.body.message,
+      'The customer must belong to the same shop as the sale.',
+    );
+  });
 });

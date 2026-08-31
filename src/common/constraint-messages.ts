@@ -73,6 +73,9 @@ export const CONSTRAINT_MESSAGES: Record<string, string> = {
   supplier_name_not_blank: 'A supplier must have a name.',
   fk_supplierpayment_method: 'That is not a valid supplier payment method.', // BR-62, BR-64
 
+  // ---- Expenses (§9) ----
+  fk_expenses_method: 'That is not a valid expense payment method.', // BR-62, BR-64
+
   // ---- Payments (§6) ----
   sale_payments_receipt_number_key:
     'That receipt number has already been issued.', // BR-45
@@ -121,11 +124,149 @@ export const CONSTRAINT_MESSAGES: Record<string, string> = {
 };
 
 /**
- * Fallback messages by SQLSTATE, for a constraint the map above does not name.
- * `23503` (foreign key) is worth a word: on a *delete* it almost always means
- * BR-48 or BR-60 — the row is still in use and should be deactivated instead.
+ * Table name -> what a person calls the thing in it.
+ *
+ * There are 106 foreign keys in this schema and most of them are the
+ * `created_by_id` / `updated_by_id` audit pair, so naming every constraint by
+ * hand would be a hundred lines that mostly say the same thing. Instead the two
+ * foreign-key messages below are *built* from the table PostgreSQL names in its
+ * error, and this map is the only part that needs a human.
+ *
+ * Add a row here when a table is added. A table that is missing degrades to the
+ * generic sentence rather than leaking `inventory_items` at a user.
+ */
+export const ENTITY_LABELS: Record<string, { one: string; many: string }> = {
+  accounts: { one: 'login credential', many: 'login credentials' },
+  bill_claims: { one: 'claim', many: 'claims' },
+  business_settings: { one: 'business setting', many: 'business settings' },
+  categories: { one: 'category', many: 'categories' },
+  customer_payment_allocations: {
+    one: 'payment allocation',
+    many: 'payment allocations',
+  },
+  customer_payment_batches: {
+    one: 'customer payment',
+    many: 'customer payments',
+  },
+  customers: { one: 'customer', many: 'customers' },
+  departments: { one: 'department', many: 'departments' },
+  expense_categories: { one: 'expense category', many: 'expense categories' },
+  expenses: { one: 'expense', many: 'expenses' },
+  inventory_items: { one: 'product', many: 'products' },
+  item_types: { one: 'item type', many: 'item types' },
+  job_positions: { one: 'job position', many: 'job positions' },
+  ledger_entries: { one: 'ledger entry', many: 'ledger entries' },
+  ledger_entry_types: { one: 'ledger entry type', many: 'ledger entry types' },
+  ledger_sources: { one: 'ledger source', many: 'ledger sources' },
+  payment_methods: { one: 'payment method', many: 'payment methods' },
+  permissions: { one: 'permission', many: 'permissions' },
+  sale_items: { one: 'sale line', many: 'sale lines' },
+  sale_payments: { one: 'payment', many: 'payments' },
+  sales: { one: 'sale', many: 'sales' },
+  sessions: { one: 'session', many: 'sessions' },
+  shops: { one: 'shop', many: 'shops' },
+  statuses: { one: 'status', many: 'statuses' },
+  stock_histories: { one: 'stock movement', many: 'stock movements' },
+  supplier_purchase_payments: {
+    one: 'supplier payment',
+    many: 'supplier payments',
+  },
+  supplier_purchases: { one: 'purchase', many: 'purchases' },
+  suppliers: { one: 'supplier', many: 'suppliers' },
+  transaction_types: {
+    one: 'stock movement type',
+    many: 'stock movement types',
+  },
+  units: { one: 'unit', many: 'units' },
+  user_type_permissions: { one: 'permission grant', many: 'permission grants' },
+  user_types: { one: 'user type', many: 'user types' },
+  users: { one: 'staff account', many: 'staff accounts' },
+};
+
+/** `shop_id` -> `shopId`, so the message names the field the client sent. */
+function camelCase(column: string): string {
+  return column.replace(/_([a-z])/g, (_, letter: string) =>
+    letter.toUpperCase(),
+  );
+}
+
+/**
+ * A referential-integrity failure, in whichever of its two opposite directions
+ * actually occurred.
+ *
+ * PostgreSQL reports both through the same constraint, and the old single
+ * message tried to cover both at once — which is how creating a customer with a
+ * `shopId` that does not exist came back as *"still referenced by other
+ * records … deactivate it instead of deleting it"*, advice for the other case
+ * entirely. `DETAIL` is what separates them:
+ *
+ *   insert/update  Key (shop_id)=(6) is not present in table "shops".
+ *   delete         Key (id)=(1) is (still) referenced from table "users".
+ *
+ * Only the identifiers are read out of it. The rest of `DETAIL` is never shown:
+ * on a NOT NULL violation it is the entire failing row, values included.
+ */
+export type ReferenceViolation =
+  { kind: 'missing'; message: string } | { kind: 'in-use'; message: string };
+
+export function describeReferenceViolation(
+  detail: string | undefined,
+): ReferenceViolation | undefined {
+  if (!detail) return undefined;
+
+  const missing =
+    /^Key \(([^)]*)\)=\(.*\) is not present in table "([^"]+)"/s.exec(detail);
+  if (missing) {
+    const columns = missing[1].split(', ').filter(Boolean);
+    const label = ENTITY_LABELS[missing[2]]?.one;
+    if (!label) return undefined;
+
+    // The field hint only helps when there is a single column to name; a
+    // composite key would have to list two, and those all have explicit
+    // messages above anyway.
+    const hint =
+      columns.length === 1
+        ? ` Check the "${camelCase(columns[0])}" value.`
+        : '';
+    return { kind: 'missing', message: `That ${label} does not exist.${hint}` };
+  }
+
+  const inUse = /is (?:still )?referenced from table "([^"]+)"/s.exec(detail);
+  if (inUse) {
+    const label = ENTITY_LABELS[inUse[1]]?.many;
+    if (!label) return undefined;
+    return {
+      kind: 'in-use',
+      // BR-48, BR-60 — the row is in use and deactivating is the way out.
+      message: `This record is still used by existing ${label}. Deactivate it instead of deleting it.`,
+    };
+  }
+
+  return undefined;
+}
+
+/**
+ * A NOT NULL violation names its column, so say which field is missing rather
+ * than "a required value". `DETAIL` is not consulted — for 23502 it is the
+ * failing row in full.
+ */
+export function describeMissingValue(
+  column: string | undefined,
+): string | undefined {
+  return column ? `The "${camelCase(column)}" value is required.` : undefined;
+}
+
+/**
+ * Fallback messages by SQLSTATE, for a constraint neither named above nor
+ * described by the two helpers.
+ *
+ * `23001` is the restrict violation raised by `ON DELETE RESTRICT`, which is
+ * how most of this schema refuses a delete. It was missing here, so any such
+ * delete the service layer had not already pre-checked returned 500.
  */
 export const SQLSTATE_MESSAGES: Record<string, string> = {
+  '23001':
+    'This record is still used by other records. Deactivate it instead of deleting it.',
   '23502': 'A required value is missing.',
   '23503':
     'That record is still referenced by other records, or refers to something that no longer exists. Deactivate it instead of deleting it.',

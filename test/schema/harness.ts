@@ -33,9 +33,13 @@ export async function closePool(): Promise<void> {
   if (pool) await pool.end();
 }
 
-interface PgError extends Error {
+export interface PgError extends Error {
   constraint?: string;
   code?: string;
+  // DETAIL: names the columns and the table on a referential failure, which is
+  // what the message derivation reads.
+  detail?: string;
+  column?: string;
 }
 
 /**
@@ -108,6 +112,22 @@ export async function expectRejectedBy(
       }" did instead: ${error.message}`,
     );
   }
+}
+
+/**
+ * The driver error a write provoked, for tests that assert on more than which
+ * constraint fired — the message-derivation suite needs `detail` itself, since
+ * the wording PostgreSQL puts there is what the filter parses.
+ */
+export async function captureError(
+  sql: string,
+  setup: string[] = [],
+): Promise<PgError> {
+  const error = await attempt(sql, setup);
+  if (!error) {
+    throw new Error('Expected the write to be refused, but it was accepted.');
+  }
+  return error;
 }
 
 export async function expectAccepted(

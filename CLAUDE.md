@@ -49,9 +49,9 @@ npm run migration:revert     # roll back the last one
 npm run db:reset             # drop schema + re-apply everything
 npm run seed:admin           # first Owner account (the API cannot create it)
 
-npm run test:db              # both suites (228 tests)
-npm run test:schema          # 52 constraint/trigger tests (Jest)
-npm run test:e2e             # 176 API tests (node:test via ts-node)
+npm run test:db              # both suites (237 tests)
+npm run test:schema          # 58 constraint/trigger/message tests (Jest)
+npm run test:e2e             # 179 API tests (node:test via ts-node)
 ```
 
 Both suites need `DATABASE_URL_TEST` and will truncate that database.
@@ -170,6 +170,13 @@ These have each cost real debugging time.
   constraint name to a message in `common/constraint-messages.ts`. Match on the
   **constraint name, never the table** — `sale_not_overpaid` reports against `sales`,
   not `sale_payments`, because the trigger propagates the payment into the sale.
+- **A foreign key fails in two opposite directions and needs two messages.** The
+  same constraint refuses *"you referenced a shop that does not exist"* (422) and
+  *"this shop is still in use, deactivate it"* (409). A name in
+  `CONSTRAINT_MESSAGES` wins outright; everything else is built from PostgreSQL's
+  `DETAIL` line plus `ENTITY_LABELS`, so a new table needs a row there and not a
+  hundred constraint entries. Never echo `DETAIL` itself — on a NOT NULL violation
+  it is the whole failing row.
 
 ## Documentation
 
