@@ -24,6 +24,7 @@
     "migration:show": "npm run typeorm -- migration:show -d ./src/config/data-source.ts",
     "schema:drop": "npm run typeorm -- schema:drop -d ./src/config/data-source.ts",
     "db:reset": "npm run schema:drop && npm run migration:run",
+    "seed:admin": "ts-node -T ./scripts/seed-admin.ts",
     "test:schema": "jest --config ./test/jest-schema.json",
     "test:db": "npm run test:schema && npm run test:e2e"
   },

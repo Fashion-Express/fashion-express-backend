@@ -10,6 +10,12 @@ Nest's.
 `GET /api/me` is the exception — that one *is* ours, and it is the route an
 application shell actually wants.
 
+> **No account yet?** Sign-in needs a user, and the route that creates users
+> needs a session — a closed loop on an empty database. `npm run seed:admin`
+> breaks it by writing the first Owner account directly (username `admin`,
+> password `12345678` by default; `--help` lists the flags). See
+> [README.md](../README.md#the-first-account).
+
 > **Every request below needs an `Origin` header once you are signed in.**
 > better-auth refuses its own routes with `403 MISSING_OR_NULL_ORIGIN` when a
 > session cookie is present and no trusted origin is declared. Signing in for

@@ -65,11 +65,30 @@ cp .env.example .env                # then set BETTER_AUTH_SECRET
 openssl rand -base64 32             # ... to one of these
 
 npm run migration:run               # applies all 15 migrations + seed data
+npm run seed:admin                  # the first Owner account — see below
 npm run start:dev
 curl localhost:3000/api/health
 ```
 
 `npm run db:reset` drops and re-applies everything.
+
+### The first account
+
+`AuthGuard` is global, so `POST /users` — the route that creates staff — needs a
+session to reach, and on an empty database there is no user to open one with.
+`npm run seed:admin` writes that first row from outside the API: an Owner
+(`user_types.code = 'owner'`, the unrestricted type) with username `admin` and
+password `12345678`, both overridable.
+
+```bash
+npm run seed:admin -- --username owner --password 'something-better'
+npm run seed:admin -- --force --password 'rotated'   # reset an existing account
+npm run seed:admin -- --help
+```
+
+Running it twice is safe — without `--force` it reports the account already
+exists and writes nothing. **Change the default password before the API is
+reachable from anywhere but your machine.**
 
 ## Status
 

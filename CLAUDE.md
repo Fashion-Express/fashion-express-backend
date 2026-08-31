@@ -47,6 +47,7 @@ npm run format               # prettier
 npm run migration:run        # apply migrations
 npm run migration:revert     # roll back the last one
 npm run db:reset             # drop schema + re-apply everything
+npm run seed:admin           # first Owner account (the API cannot create it)
 
 npm run test:db              # both suites (228 tests)
 npm run test:schema          # 52 constraint/trigger tests (Jest)
