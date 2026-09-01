@@ -314,7 +314,14 @@ each.
 
 ---
 
-## Not built yet
+## Documents and exports
 
-**FR-02.9 documents and exports** — printable invoices and receipts, the PDF
-statement and the CSV order history — land with the rest of the reporting work.
+**FR-02.9 is built**, on `DocumentsController` (`/api/documents`), not here:
+`sales/:id/invoice`, `sales/:id/statement`, `sales/:id/payments.csv`,
+`payments/:id/receipt`, `orders.csv` and `orders.pdf`. Each re-applies BR-01
+before rendering — a sale outside the caller's scope is missing, not forbidden.
+
+`orders.csv` and `orders.pdf` take an optional `?customerId=`, which narrows the
+history to one customer and names them in the document and the filename. It
+composes with BR-01 rather than replacing it: an employee asking for one
+customer's orders gets **their own** sales for that customer.

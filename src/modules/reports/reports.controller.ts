@@ -1,4 +1,11 @@
-import { Controller, Get, NotFoundException, Param, Res } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  NotFoundException,
+  Param,
+  Query,
+  Res,
+} from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { Response } from 'express';
 import { DataSource } from 'typeorm';
@@ -59,10 +66,63 @@ export class DocumentsController {
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
-  /** BR-01 as a WHERE fragment, the same rule the sales list applies. */
-  private scope(user: AuthUser): { clause: string; params: unknown[] } {
-    if (user.isSuperuser || user.isManager) return { clause: '', params: [] };
-    return { clause: 'WHERE s.created_by_id = $1', params: [user.id] };
+  /**
+   * BR-01 as a WHERE fragment, the same rule the sales list applies,
+   * optionally narrowed to one customer for the account-level export.
+   *
+   * Built as a list rather than a string because the two conditions can both
+   * apply — an employee exporting one customer's orders gets their own sales
+   * for that customer, not the customer's whole history. Placeholders are
+   * numbered from the array so the order of the conditions cannot desync them.
+   */
+  private scope(
+    user: AuthUser,
+    customerId?: string,
+  ): { clause: string; params: unknown[] } {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    if (!user.isSuperuser && !user.isManager) {
+      params.push(user.id);
+      conditions.push(`s.created_by_id = $${params.length}`);
+    }
+
+    if (customerId !== undefined) {
+      params.push(customerId);
+      conditions.push(`s.customer_id = $${params.length}`);
+    }
+
+    return {
+      clause: conditions.length ? `WHERE ${conditions.join(' AND ')}` : '',
+      params,
+    };
+  }
+
+  /**
+   * Resolves the `customerId` an export was asked to filter by, and names it so
+   * the document can say whose history it is.
+   *
+   * Also the validation: the id reaches SQL as a bound parameter, so it cannot
+   * inject, but a non-numeric one would make Postgres raise on the bigint cast
+   * and answer 500. A malformed id and an absent customer both answer 404 —
+   * which ids exist is not something to hand back either.
+   */
+  private async exportCustomer(
+    customerId: string | undefined,
+  ): Promise<{ customer_id: string; name: string } | undefined> {
+    if (customerId === undefined) return undefined;
+
+    const customer = /^\d+$/.test(customerId)
+      ? firstRow<{ customer_id: string; name: string }>(
+          await this.dataSource.query(
+            'SELECT customer_id, name FROM customers WHERE id = $1',
+            [customerId],
+          ),
+        )
+      : undefined;
+
+    if (!customer) throw new NotFoundException('No such customer.');
+    return customer;
   }
 
   /**
@@ -119,9 +179,28 @@ export class DocumentsController {
     send(res, Buffer.from(csv, 'utf8'), filename, CSV);
   }
 
+  /**
+   * BR-01 reaches a receipt through the sale that owns it. The id in the path
+   * is the PAYMENT's, so the sale has to be looked up before the scope check
+   * can run — without it a non-manager could print another user's receipt by
+   * walking payment ids, which is the one thing BR-01 exists to prevent.
+   */
   @Get('payments/:id/receipt')
   @RequirePermission('view_sale')
-  async receipt(@Param('id') id: string, @Res() res: Response): Promise<void> {
+  async receipt(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthUser,
+    @Res() res: Response,
+  ): Promise<void> {
+    const payment = firstRow<{ sale_id: string }>(
+      await this.dataSource.query(
+        'SELECT sale_id::text FROM sale_payments WHERE id = $1',
+        [id],
+      ),
+    );
+    if (!payment) throw new NotFoundException('No such payment.');
+    await this.assertVisible(payment.sale_id, user);
+
     const { buffer, filename } = await this.documents.receipt(id);
     send(res, buffer, filename, PDF);
   }
@@ -131,9 +210,14 @@ export class DocumentsController {
   @RequirePermission('view_sale')
   async ordersCsv(
     @CurrentUser() user: AuthUser,
+    @Query('customerId') customerId: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
-    const { csv, filename } = await this.documents.ordersCsv(this.scope(user));
+    const customer = await this.exportCustomer(customerId);
+    const { csv, filename } = await this.documents.ordersCsv(
+      this.scope(user, customerId),
+      customer,
+    );
     send(res, Buffer.from(csv, 'utf8'), filename, CSV);
   }
 
@@ -141,10 +225,13 @@ export class DocumentsController {
   @RequirePermission('view_sale')
   async ordersPdf(
     @CurrentUser() user: AuthUser,
+    @Query('customerId') customerId: string | undefined,
     @Res() res: Response,
   ): Promise<void> {
+    const customer = await this.exportCustomer(customerId);
     const { buffer, filename } = await this.documents.ordersPdf(
-      this.scope(user),
+      this.scope(user, customerId),
+      customer,
     );
     send(res, buffer, filename, PDF);
   }

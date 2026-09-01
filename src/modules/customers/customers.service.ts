@@ -37,7 +37,7 @@ export interface CustomerRow {
 
 const SELECT_CUSTOMER = `
   SELECT c.id::text, c.customer_id, c.name, c.company, c.email, c.phone,
-         c.address, c.city, c.notes,
+         c.address, c.city, c.notes, c.created_at,
          st.code AS status_code, st.label AS status_label,
          c.shop_id::text, sh.name AS shop_name
     FROM customers c

@@ -75,6 +75,8 @@ export class CreatePurchasePaymentDto {
 export class UpdatePurchasePaymentDto {
   @IsOptional() @IsNumberString() amount?: string;
   @IsOptional() @IsDateString() paymentDate?: string;
+  /** Must be a `supplier`-scoped method, same as on insert (BR-62). */
+  @IsOptional() @IsNumberString() paymentMethodId?: string;
   @IsOptional() @IsString() @Length(0, 100) referenceNumber?: string;
   @IsOptional() @IsString() notes?: string;
 }

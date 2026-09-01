@@ -56,6 +56,13 @@ export class UsersController {
     return this.users.grantsFor(id);
   }
 
+  /** Active staff for a picker. Before `:id`, or 'options' matches as an id. */
+  @Get('options')
+  @RequirePermission('view_user')
+  options(): Promise<Array<{ id: string; name: string }>> {
+    return this.users.options();
+  }
+
   @Get(':id')
   @RequirePermission('view_user')
   findOne(@Param('id') id: string): Promise<StaffRow> {

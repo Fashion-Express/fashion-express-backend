@@ -122,6 +122,8 @@ export class CreateSalePaymentDto {
 export class UpdateSalePaymentDto {
   @IsOptional() @IsNumberString() amount?: string;
   @IsOptional() @IsDateString() paymentDate?: string;
+  /** Must be a `customer`-scoped method, same as on insert (BR-62). */
+  @IsOptional() @IsNumberString() paymentMethodId?: string;
   @IsOptional() @IsString() notes?: string;
 }
 
