@@ -8,6 +8,7 @@ import {
   IsString,
   Length,
   Min,
+  ValidateIf,
 } from 'class-validator';
 
 /**
@@ -56,8 +57,20 @@ export class UpdateInventoryItemDto {
   @IsOptional() @IsString() @Length(1, 50) partCode?: string;
   @IsOptional() @IsString() @Length(1, 200) partName?: string;
   @IsOptional() @IsNumberString() unitId?: string;
-  @IsOptional() @IsNumberString() categoryId?: string;
-  @IsOptional() @IsNumberString() supplierId?: string;
+  /*
+   * Both are OPTIONAL on the record (FR-12.4), so an edit has to be able to
+   * take them off again. `undefined` is "leave alone" and `null` is "clear" —
+   * without the second, a product filed under a category could never be
+   * unfiled, and the only way back was to delete and re-create it.
+   */
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsNumberString()
+  categoryId?: string | null;
+  @IsOptional()
+  @ValidateIf((_, value) => value !== null)
+  @IsNumberString()
+  supplierId?: string | null;
   @IsOptional() @IsString() description?: string;
   @IsOptional() @IsString() @Length(0, 100) location?: string;
   @IsOptional() @IsNumberString() quantity?: string;

@@ -56,6 +56,29 @@ export class UsersService {
     private readonly permissions: PermissionsService,
   ) {}
 
+  /**
+   * FR-00.6 — the staff picker, for the sales list's salesperson filter.
+   *
+   * Deliberately unpaginated, like every other `/options` feed: a filter built
+   * from page one of a paginated list silently cannot find the eleventh member
+   * of staff, which is worse than having no filter at all.
+   *
+   * Active staff only. Someone who has left still owns the sales they made, so
+   * their name stays ON those records — but offering them in a filter of who is
+   * selling is a different question, and the answer is no.
+   */
+  async options(): Promise<Array<{ id: string; name: string }>> {
+    return rowsOf(
+      await this.dataSource.query(
+        `SELECT u.id::text, COALESCE(NULLIF(u.name, ''), u.username) AS name
+           FROM users u
+           JOIN statuses s ON s.id = u.status_id AND s.scope = 'user'
+          WHERE s.code = 'active'
+          ORDER BY name`,
+      ),
+    );
+  }
+
   async list(query: ListUsersQuery): Promise<Page<StaffRow>> {
     const where: string[] = [];
     const params: unknown[] = [];

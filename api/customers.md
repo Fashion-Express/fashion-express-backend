@@ -26,6 +26,7 @@ curl -s -b $JAR "$BASE/customers?page=1"
       "address": "",
       "city": "Dhaka",
       "notes": "",
+      "created_at": "2026-08-26T04:12:55.108Z",
       "status_code": "active",
       "status_label": "Active",
       "shop_id": "1",
@@ -174,12 +175,19 @@ Show `deletion-impact` first and make the user acknowledge the loss.
 
 ---
 
-## Not built yet
+## FR-03.4 / FR-03.5 — built, and served from the sales module
 
-Two parts of FR-03 need sales to exist and land in the next phase:
+Both live on `SalesController`, because they read the sales tables:
 
-- **FR-03.4** the customer account view — every finalised order with total
-  invoiced, received and due, plus the payment history.
-- **FR-03.5** customer-level payment — one lump sum spread across outstanding
-  sales oldest-first (BR-16), each sale getting its own payment row and receipt
+- `GET /api/customers/:id/account` — **FR-03.4**, the account view: the customer,
+  the finalised totals (`invoiced`, `received`, `due`, `order_count`), every
+  finalised `order`, and the `paymentEvents` with how many invoices each settled.
+  It does **not** embed each order's line items; those are `GET /api/sales/:id/items`.
+- `GET /api/customers/:id/outstanding` — **FR-03.5.1**, offer the payment action
+  only when this is above zero.
+- `POST /api/customers/:id/payments` — **FR-03.5**, one lump sum spread
+  oldest-first (BR-16), each sale getting its own payment row and receipt
   (BR-18), the whole event grouped under one reference (BR-19).
+- `GET /api/customer-payments/:batchRef` — BR-19's combined receipt. Keyed on a
+  globally unique reference and **not** customer-scoped: a caller showing it
+  under a customer must check `customer_number` itself.

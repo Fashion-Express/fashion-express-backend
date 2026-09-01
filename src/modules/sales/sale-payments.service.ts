@@ -39,8 +39,9 @@ export class SalePaymentsService {
     return rowsOf(
       await this.dataSource.query(
         `SELECT p.id::text, p.receipt_number, p.amount::text, p.payment_date::text,
+                p.payment_method_id::text,
                 m.code AS method_code, m.label AS method_label, p.notes,
-                a.batch_id::text
+                p.created_at, a.batch_id::text
            FROM sale_payments p
            JOIN payment_methods m ON m.id = p.payment_method_id
            LEFT JOIN customer_payment_allocations a ON a.sale_payment_id = p.id
@@ -108,19 +109,7 @@ export class SalePaymentsService {
       throw new BadRequestException('A payment must be for more than zero.');
     }
 
-    const method = firstRow<{ id: string; label: string }>(
-      await manager.query(
-        `SELECT id::text, label FROM payment_methods
-          WHERE id = $1 AND scope = 'customer'`,
-        [dto.paymentMethodId],
-      ),
-    );
-    if (!method) {
-      throw new BadRequestException(
-        'That is not a customer payment method. A sale receipt may only use ' +
-          'methods scoped to `customer`.',
-      );
-    }
+    const method = await this.customerMethod(manager, dto.paymentMethodId);
 
     const receipt = saleReceiptNumber();
 
@@ -186,6 +175,13 @@ export class SalePaymentsService {
       }
       if (dto.paymentDate !== undefined) set('payment_date', dto.paymentDate);
       if (dto.notes !== undefined) set('notes', dto.notes);
+      if (dto.paymentMethodId !== undefined) {
+        // BR-62 is re-checked here, not just on insert: the scope pinning is a
+        // foreign key over (method, scope), so an unchecked update would fail
+        // as a constraint violation instead of a sentence.
+        const method = await this.customerMethod(manager, dto.paymentMethodId);
+        set('payment_method_id', method.id);
+      }
       if (sets.length === 0) return;
 
       set('updated_by_id', actorId);
@@ -205,6 +201,23 @@ export class SalePaymentsService {
           payment.receipt_number,
           dto.amount,
         );
+
+        /*
+         * A repriced payment that came from a lump sum moves its allocation
+         * with it, and the batch total follows. Without this the combined
+         * receipt keeps quoting the amount originally taken while the invoices
+         * under it say something else.
+         */
+        const allocation = await this.allocationOf(manager, id);
+        if (allocation) {
+          await lockRow(manager, 'customers', allocation.customer_id);
+          await manager.query(
+            `UPDATE customer_payment_allocations SET amount = $1
+              WHERE sale_payment_id = $2`,
+            [dto.amount, id],
+          );
+          await this.resyncBatch(manager, allocation.batch_id);
+        }
       }
     });
   }
@@ -220,9 +233,114 @@ export class SalePaymentsService {
       if (!payment) throw new NotFoundException('No such payment.');
 
       await lockRow(manager, 'sales', payment.sale_id);
+
+      /*
+       * Read the grouping BEFORE the delete: `customer_payment_allocations`
+       * cascades off `sale_payments`, so once the row is gone there is nothing
+       * left to say which batch it belonged to.
+       *
+       * Locks follow `add()` above — the sale row, then the customer — so the
+       * two write paths in this file take them in the same order.
+       */
+      const allocation = await this.allocationOf(manager, id);
+      if (allocation) {
+        await lockRow(manager, 'customers', allocation.customer_id);
+      }
+
       await manager.query(`DELETE FROM sale_payments WHERE id = $1`, [id]);
       await this.ledger.remove(manager, 'sale_payment', payment.receipt_number);
+
+      // The allocation went with the payment; the batch above it has to be
+      // told (BR-19).
+      if (allocation) await this.resyncBatch(manager, allocation.batch_id);
     });
+  }
+
+  /**
+   * BR-62 — a sale receipt may only carry a `customer`-scoped method. The
+   * column pair `(payment_method_id, payment_scope)` is a real foreign key, so
+   * the database refuses a supplier method anyway; this turns that refusal into
+   * a sentence naming what went wrong. Shared by insert and edit so the two
+   * cannot drift apart.
+   */
+  private async customerMethod(
+    manager: EntityManager,
+    paymentMethodId: string,
+  ): Promise<{ id: string; label: string }> {
+    const method = firstRow<{ id: string; label: string }>(
+      await manager.query(
+        `SELECT id::text, label FROM payment_methods
+          WHERE id = $1 AND scope = 'customer'`,
+        [paymentMethodId],
+      ),
+    );
+    if (!method) {
+      throw new BadRequestException(
+        'That is not a customer payment method. A sale receipt may only use ' +
+          'methods scoped to `customer`.',
+      );
+    }
+    return method;
+  }
+
+  /**
+   * The allocation a payment belongs to, if it came from a customer lump sum.
+   *
+   * A payment created by the allocator is a real `sale_payments` row like any
+   * other (BR-18), so an edit or a delete reaches it through the same paths as
+   * a directly-entered one — and has to carry BR-19's grouping with it.
+   */
+  private async allocationOf(
+    manager: EntityManager,
+    paymentId: string,
+  ): Promise<{ batch_id: string; customer_id: string } | undefined> {
+    return firstRow<{ batch_id: string; customer_id: string }>(
+      await manager.query(
+        `SELECT a.batch_id::text, b.customer_id::text
+           FROM customer_payment_allocations a
+           JOIN customer_payment_batches b ON b.id = a.batch_id
+          WHERE a.sale_payment_id = $1`,
+        [paymentId],
+      ),
+    );
+  }
+
+  /**
+   * BR-19 — put the batch back in step with the payments it actually covers.
+   *
+   * The combined receipt is the sum of its allocations, so once one of them has
+   * moved or gone the stored `total_amount` is a claim about money that is no
+   * longer there. Recomputed from the allocations rather than adjusted by a
+   * delta: a delta is only right if nothing else changed in between, and the
+   * sum is right unconditionally.
+   *
+   * An emptied batch is DELETED, not zeroed — `batch_amount_positive` forbids a
+   * zero total, and a receipt covering no invoices is not a record of anything.
+   */
+  private async resyncBatch(
+    manager: EntityManager,
+    batchId: string,
+  ): Promise<void> {
+    const total = firstRow<{ total: string | null; lines: string }>(
+      await manager.query(
+        `SELECT SUM(amount)::text AS total, count(*)::text AS lines
+           FROM customer_payment_allocations WHERE batch_id = $1`,
+        [batchId],
+      ),
+    );
+
+    if (!total || Number(total.lines) === 0) {
+      await manager.query(
+        `DELETE FROM customer_payment_batches WHERE id = $1`,
+        [batchId],
+      );
+      return;
+    }
+
+    await manager.query(
+      `UPDATE customer_payment_batches SET total_amount = $1 WHERE id = $2`,
+      [total.total, batchId],
+    );
   }
 
   /** BR-11 — cancelled sales and quotations cannot take payment. */

@@ -403,9 +403,12 @@ export class SuppliersService {
         purchase_id: string;
         receipt_number: string;
         amount: string;
+        payment_method_id: string;
+        reference_number: string;
       }>(
         await manager.query(
-          `SELECT purchase_id::text, receipt_number, amount::text
+          `SELECT purchase_id::text, receipt_number, amount::text,
+                  payment_method_id::text, reference_number
              FROM supplier_purchase_payments WHERE id = $1`,
           [id],
         ),
@@ -413,6 +416,22 @@ export class SuppliersService {
       if (!payment) throw new NotFoundException('No such payment.');
 
       await lockRow(manager, 'supplier_purchases', payment.purchase_id);
+
+      /*
+       * BR-29 is checked against the values the row will END UP with, not the
+       * ones that arrived. Either half can be edited alone: switching cash to
+       * bank without adding a reference has to be refused, and so does clearing
+       * the reference on a payment that is already bank — and neither is
+       * visible from the incoming fields on their own.
+       */
+      const method = await this.supplierMethod(
+        manager,
+        dto.paymentMethodId ?? payment.payment_method_id,
+      );
+      this.assertReference(
+        method,
+        dto.referenceNumber ?? payment.reference_number,
+      );
 
       const sets: string[] = [];
       const params: unknown[] = [];
@@ -422,6 +441,13 @@ export class SuppliersService {
       };
       if (dto.amount !== undefined) set('amount', dto.amount);
       if (dto.paymentDate !== undefined) set('payment_date', dto.paymentDate);
+      if (dto.paymentMethodId !== undefined) {
+        // `method_code` is denormalised onto the row — BR-29's CHECK reads it,
+        // so it has to move with the id or the constraint would be judging the
+        // old method.
+        set('payment_method_id', method.id);
+        set('method_code', method.code);
+      }
       if (dto.referenceNumber !== undefined)
         set('reference_number', dto.referenceNumber);
       if (dto.notes !== undefined) set('notes', dto.notes);
@@ -554,6 +580,51 @@ export class SuppliersService {
    *  - **The ledger post happens here** (BR-38), in the same transaction, so a
    *    payment can never exist without its debit.
    */
+  /**
+   * BR-62 — a supplier payment may only use a `supplier`-scoped method. The
+   * pairing is a real foreign key over (method, scope); this turns the
+   * database's refusal into a sentence. Shared by insert and edit so the two
+   * cannot drift apart.
+   */
+  private async supplierMethod(
+    manager: EntityManager,
+    paymentMethodId: string,
+  ): Promise<{ id: string; code: string; label: string }> {
+    const method = firstRow<{ id: string; code: string; label: string }>(
+      await manager.query(
+        `SELECT id::text, code, label FROM payment_methods
+          WHERE id = $1 AND scope = 'supplier'`,
+        [paymentMethodId],
+      ),
+    );
+    if (!method) {
+      throw new BadRequestException(
+        'That is not a supplier payment method. Supplier payments may only use ' +
+          'methods scoped to `supplier`.',
+      );
+    }
+    return method;
+  }
+
+  /**
+   * BR-29 in the application, so the user gets a sentence; the CHECK constraint
+   * `supplierpayment_reference_required` is the guarantee.
+   *
+   * The rule fails CLOSED — anything that is not cash needs a reference — so a
+   * payment method added later errs toward demanding a trace.
+   */
+  private assertReference(
+    method: { code: string; label: string },
+    referenceNumber: string | undefined,
+  ): void {
+    if (method.code !== 'cash' && !referenceNumber?.trim()) {
+      throw new BadRequestException(
+        `A reference number is required for ${method.label} payments. ` +
+          'Only cash needs none.',
+      );
+    }
+  }
+
   private async writePayment(
     manager: EntityManager,
     purchaseId: string,
@@ -566,28 +637,8 @@ export class SuppliersService {
     },
     actorId: string | null = null,
   ): Promise<void> {
-    const method = firstRow<{ id: string; code: string; label: string }>(
-      await manager.query(
-        `SELECT id::text, code, label FROM payment_methods
-          WHERE id = $1 AND scope = 'supplier'`,
-        [dto.paymentMethodId],
-      ),
-    );
-    if (!method) {
-      throw new BadRequestException(
-        'That is not a supplier payment method. Supplier payments may only use ' +
-          'methods scoped to `supplier`.',
-      );
-    }
-
-    // BR-29 in the application, so the user gets a sentence; the CHECK
-    // constraint `supplierpayment_reference_required` is the guarantee.
-    if (method.code !== 'cash' && !dto.referenceNumber?.trim()) {
-      throw new BadRequestException(
-        `A reference number is required for ${method.label} payments. ` +
-          'Only cash needs none.',
-      );
-    }
+    const method = await this.supplierMethod(manager, dto.paymentMethodId);
+    this.assertReference(method, dto.referenceNumber);
 
     const receipt = supplierPaymentNumber();
 
