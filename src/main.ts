@@ -11,6 +11,13 @@ import { DatabaseExceptionFilter } from './common/database-exception.filter';
 import { isProduction, loadEnv } from './config/env';
 
 /**
+ * Note: @vercel/speed-insights is installed but not integrated here as this is
+ * a backend API that doesn't serve HTML pages. Speed Insights should be
+ * integrated into any frontend application that consumes this API.
+ * See src/config/speed-insights.ts for configuration details.
+ */
+
+/**
  * Build the application with every piece of middleware in place.
  *
  * Extracted from `bootstrap` so the end-to-end tests exercise *this* wiring
