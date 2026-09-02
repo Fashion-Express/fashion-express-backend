@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -8,6 +9,7 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import { PAGE_SIZE, type Page, toPage } from '../../common/pagination';
 import { affectedRows, firstRow, rowsOf } from '../../common/sql';
+import type { AuthUser } from '../auth/auth-user';
 import { PermissionsService } from '../auth/permissions.service';
 import type {
   CreateReferenceDto,
@@ -160,7 +162,7 @@ export class ReferenceService {
   async create(
     slug: string,
     dto: CreateReferenceDto,
-    actorId: string | null,
+    actor: AuthUser,
   ): Promise<ReferenceRow> {
     const list = this.resolve(slug);
 
@@ -217,10 +219,10 @@ export class ReferenceService {
     }
     if (dto.isActive !== undefined) add('is_active', dto.isActive);
 
-    this.applyPrivilegeFlags(list, dto, add);
+    this.applyPrivilegeFlags(list, dto, actor, add);
 
-    add('created_by_id', actorId);
-    add('updated_by_id', actorId);
+    add('created_by_id', actor.id);
+    add('updated_by_id', actor.id);
 
     const inserted: unknown = await this.dataSource.query(
       `INSERT INTO ${list.table} (${columns.join(', ')})
@@ -239,7 +241,7 @@ export class ReferenceService {
     slug: string,
     id: string,
     dto: UpdateReferenceDto,
-    actorId: string | null,
+    actor: AuthUser,
   ): Promise<ReferenceRow> {
     const list = this.resolve(slug);
     const sets: string[] = [];
@@ -298,14 +300,14 @@ export class ReferenceService {
         set('sort_order', dto.sortOrder);
       }
       if (dto.isActive !== undefined) set('is_active', dto.isActive);
-      this.applyPrivilegeFlags(list, dto, (column, value) =>
+      this.applyPrivilegeFlags(list, dto, actor, (column, value) =>
         set(column, value),
       );
     }
 
     if (sets.length === 0) return this.findOne(slug, id);
 
-    set('updated_by_id', actorId);
+    set('updated_by_id', actor.id);
 
     // `updated_at` is left to the trg_*_touch trigger (migration 016).
     params.push(id);
@@ -388,7 +390,11 @@ export class ReferenceService {
     const byTable: Record<string, number> = {};
     let total = 0;
 
+    const excluded = new Set(list.usageExcludes ?? []);
+
     for (const ref of references) {
+      // An entry's own rows are not a reason it cannot be deleted (BR-60).
+      if (excluded.has(ref.table_name)) continue;
       // Both identifiers come from the catalogue, never from the request.
       const counted = firstRow<{ n: string }>(
         await this.dataSource.query(
@@ -438,9 +444,22 @@ export class ReferenceService {
     }
   }
 
+  /**
+   * FR-12.1.2 — the privilege a user type confers.
+   *
+   * **Restricted to administrators, unlike the rest of this module.** Writing
+   * these two columns is not editing reference data, it is handing out
+   * privilege: `manage_referencedata` alone used to be enough to create a type
+   * with `is_superuser`, and `change_user` is enough to point an account at a
+   * type — so a manager, who holds both, could mint an unrestricted role and
+   * move themselves into it in two requests. Both directions are guarded, not
+   * just the grant: clearing `is_manager` on the Manager type would demote
+   * every manager at once (BR-56), which is the same authority in reverse.
+   */
   private applyPrivilegeFlags(
     list: ReferenceList,
     dto: { isSuperuser?: boolean; isManager?: boolean },
+    actor: AuthUser,
     add: (column: string, value: unknown) => void,
   ): void {
     const supported = (list.extraColumns ?? []).includes('is_superuser');
@@ -452,6 +471,12 @@ export class ReferenceService {
       if (value === undefined) continue;
       if (!supported) {
         throw new BadRequestException(`"${list.slug}" has no ${key}.`);
+      }
+      if (!actor.isSuperuser) {
+        throw new ForbiddenException(
+          `Setting ${key} decides what every holder of a type may do, so it ` +
+            'is restricted to administrators.',
+        );
       }
       add(column, value);
     }

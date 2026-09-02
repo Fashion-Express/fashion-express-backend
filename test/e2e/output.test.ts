@@ -13,6 +13,7 @@ import { after, before, describe, test } from 'node:test';
 import 'dotenv/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { Server } from 'node:http';
+import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { authPool } from '../../src/config/auth-pool';
 import { createCredential } from '../../src/modules/auth/credentials';
@@ -114,7 +115,7 @@ before(async () => {
 
   app = await createApp();
   await app.init();
-  server = app.getHttpServer() as Server;
+  server = app.getHttpServer();
 
   admin = await signIn('outadmin');
   staff = await signIn('outstaff');
@@ -253,6 +254,25 @@ describe('FR-01 dashboard', () => {
     assert.equal((await as(staff).get('/api/dashboard')).body.reduced, false);
   });
 
+  /**
+   * BR-01 — the dashboard does not only aggregate, it LISTS individual sales.
+   * That makes it a read path like any other, and an employee's five most
+   * recent must be their own five.
+   */
+  test('BR-01 scopes the dashboard’s recent sales to the reader', async () => {
+    const ids = (body: { recentSales: Array<{ id: string }> }) =>
+      body.recentSales.map((s) => s.id);
+
+    const manager = await as(admin).get('/api/dashboard');
+    const employee = await as(staff).get('/api/dashboard');
+
+    assert.ok(ids(manager.body).includes(saleId));
+    assert.ok(
+      !ids(employee.body).includes(saleId),
+      'an employee must not see another user’s sale on the dashboard',
+    );
+  });
+
   /** FR-01.6 — the count that must appear on every page. */
   test('FR-01.6 serves a low-stock count, per shop', async () => {
     const all = await as(admin).get('/api/low-stock-count');
@@ -313,10 +333,76 @@ describe('FR-09 reports and exports', () => {
     assert.ok(body.length > 5000);
   });
 
-  test('FR-09.4 exports the customer summary', async () => {
+  /**
+   * FR-09.4 — and every figure has to sit under its own header.
+   *
+   * `addSheet` writes a row positionally, so a SELECT whose column order drifts
+   * from the header list silently shifts the whole sheet. That is not visible
+   * in a "is it a zip" check: the file opens, the numbers look plausible, and a
+   * customer's order count reads as the amount they owe. The alignment is
+   * provable only from the arithmetic BETWEEN the columns, so that is what is
+   * asserted.
+   */
+  test('FR-09.4 exports the customer summary with every figure under its own header', async () => {
     const r = await download(admin, '/api/reports/export/customers');
     assert.equal(r.status, 200);
     assert.equal((r.body as Buffer).subarray(0, 2).toString('latin1'), 'PK');
+
+    const workbook = new ExcelJS.Workbook();
+    // supertest hands back a Node Buffer; ExcelJS types its own.
+    await workbook.xlsx.load(r.body as unknown as ExcelJS.Buffer);
+    const sheet = workbook.getWorksheet('Customer summary');
+    assert.ok(sheet, 'the workbook has a Customer summary sheet');
+
+    const headers = (sheet.getRow(1).values as unknown[])
+      .slice(1)
+      .map((value) => String(value));
+    assert.deepEqual(headers, [
+      'Customer ID',
+      'Name',
+      'Company',
+      'Phone',
+      'Shop',
+      'Orders',
+      'Invoiced',
+      'Received',
+      'Due',
+    ]);
+
+    const cell = (row: ExcelJS.Row, header: string) =>
+      row.getCell(headers.indexOf(header) + 1).value;
+
+    // Data rows only — the last row is the TOTAL.
+    let checked = 0;
+    for (let n = 2; n < sheet.rowCount; n += 1) {
+      const row = sheet.getRow(n);
+      const where = `row ${n}`;
+
+      assert.match(String(cell(row, 'Customer ID')), /^FE/, where);
+      assert.ok(String(cell(row, 'Phone') ?? '').length > 0, `${where}: phone`);
+
+      const invoiced = Number(cell(row, 'Invoiced'));
+      const received = Number(cell(row, 'Received'));
+      const due = Number(cell(row, 'Due'));
+      const orders = Number(cell(row, 'Orders'));
+
+      // The relationship only holds while each value is under its own header.
+      assert.equal(due.toFixed(2), (invoiced - received).toFixed(2), where);
+      assert.ok(Number.isInteger(orders), `${where}: orders is a count`);
+      checked += 1;
+    }
+    assert.ok(checked > 0, 'the sheet has customers to check');
+
+    // The totals must point at the columns they are labelled for.
+    const total = sheet.getRow(sheet.rowCount);
+    assert.equal(total.getCell(1).value, 'TOTAL');
+    for (const header of ['Orders', 'Invoiced', 'Received', 'Due']) {
+      const letter = sheet.getColumn(headers.indexOf(header) + 1).letter;
+      const formula = (total.getCell(headers.indexOf(header) + 1).value as {
+        formula: string;
+      }).formula;
+      assert.match(formula, new RegExp(`^SUM\\(${letter}2:${letter}\\d+\\)$`), header);
+    }
   });
 });
 

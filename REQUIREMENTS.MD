@@ -94,8 +94,11 @@ enforces it.
 1. **Record permissions** — standard create/read/update/delete rights per entity
    (e.g. "may add a sale", "may delete an inventory item").
 2. **Menu and action permissions** — rights that gate navigation entries and specific
-   actions with no record of their own: view the customers / inventory / expenses /
-   reports / sales menus, submit a bill, view my bills, review bills, finalise a sale.
+   actions with no record of their own: **one menu permission per sidebar entry**, plus
+   submit a bill, view my bills, review bills, finalise a sale. A menu permission decides
+   what is drawn and nothing else; the page behind it keeps its own guard, so removing one
+   hides a link without revoking access. Dashboard and Settings are ungated: the first is
+   where sign-in lands, the second is per-browser appearance.
 3. **User type** — each account's single classification (FR-12.1), which determines whether it
    holds unrestricted or manager privilege.
 
@@ -644,7 +647,11 @@ value. This holds when adding a payment and when editing an existing one.
 
 **BR-10** — No payment may be recorded for an amount of zero or less.
 
-**BR-11** — Payments cannot be recorded against a cancelled sale, nor against a quotation.
+**BR-11** — Payments cannot be recorded against a cancelled sale. A quotation or a
+draft may take one: it is an advance against an offer that has not yet been
+invoiced. Such a payment counts toward no revenue or outstanding figure until
+the sale is finalised, and it is carried over when a quotation is converted to a
+draft invoice (FR-02.3.1).
 
 #### FR-02.6 — Editing a finalised sale
 
@@ -950,6 +957,13 @@ appear across the interface and on every printed invoice and receipt.
 
 **FR-10.2** — Setup commands exist to create the four standard role groups in one step, and
 to grant a role its baseline permissions for customers, inventory, and expenses, or for sales.
+
+> The four groups and their baseline grants are created by the seed migration.
+> Changing what a role grants afterwards is `PUT /api/users/types/:id/permissions`
+> (FR-00.4), restricted to administrators and off unless `ENABLE_ROLE_EDITING=true`
+> — editing grants is privilege escalation, so it carries the same safeguard shape
+> as the cleanup tool (BR-42). An unrestricted role, and the caller's own role,
+> cannot be edited.
 
 #### FR-10.3 — Data cleanup
 

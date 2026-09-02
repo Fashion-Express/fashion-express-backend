@@ -1927,7 +1927,7 @@
                 "sales"
               ]
             },
-            "description": "Quotation mode (FR-02.2). A quotation cannot take a payment (BR-11).",
+            "description": "Quotation mode (FR-02.2). A quotation may take an advance payment; only a cancelled sale refuses one (BR-11).",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"customerId\": \"{{customerId}}\",\n  \"shopId\": \"{{shopId}}\",\n  \"status\": \"quote\",\n  \"items\": [\n    {\n      \"itemType\": \"inventory\",\n      \"inventoryItemId\": \"{{itemId}}\",\n      \"quantity\": \"1\",\n      \"unitPrice\": \"500.00\"\n    }\n  ]\n}",

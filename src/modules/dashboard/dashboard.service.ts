@@ -68,7 +68,7 @@ export class DashboardService {
       },
       topProducts: await this.topProducts(shopId),
       lowStock: await this.lowStock(shopId),
-      recentSales: await this.recentSales(shopId),
+      recentSales: await this.recentSales(user, shopId),
       recentExpenses: await this.recentExpenses(),
     };
   }
@@ -221,17 +221,37 @@ export class DashboardService {
     );
   }
 
+  /**
+   * FR-01.3 — the five most recent sales.
+   *
+   * BR-01 binds this as tightly as it binds the sales list: *"there is no route
+   * by which a non-manager can read another user's sale"*, and this is a route.
+   * Unscoped it would also list rows that answer 404 the moment they are
+   * opened, which reads as a broken link rather than as a rule.
+   */
   private async recentSales(
+    user: AuthUser,
     shopId?: string,
   ): Promise<Array<Record<string, unknown>>> {
     const params: unknown[] = [];
-    const clause = shopId ? `WHERE s.shop_id = $1` : '';
-    if (shopId) params.push(shopId);
+    const where: string[] = [];
+    if (shopId) {
+      params.push(shopId);
+      where.push(`s.shop_id = $${params.length}`);
+    }
+    if (!user.isSuperuser && !user.isManager) {
+      params.push(user.id);
+      where.push(`s.created_by_id = $${params.length}`);
+    }
+    const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
     return rowsOf(
       await this.dataSource.query(
-        `SELECT s.id::text, s.sale_number, s.status_code, s.total_amount::text,
+        `SELECT s.id::text, s.sale_number, s.status_code,
+                st.label AS status_label, s.total_amount::text,
                 c.name AS customer_name, s.created_at
-           FROM sales s JOIN customers c ON c.id = s.customer_id
+           FROM sales s
+           JOIN customers c ON c.id = s.customer_id
+           JOIN statuses st ON st.id = s.status_id AND st.scope = 'sale'
            ${clause} ORDER BY s.created_at DESC LIMIT 5`,
         params,
       ),

@@ -46,6 +46,16 @@ export interface ReferenceList {
   readonly extraColumns?: readonly string[];
   /** Columns that exist but may never be written through this module. */
   readonly readOnly?: readonly string[];
+  /**
+   * Tables that reference this list but are part of the entry ITSELF rather
+   * than a record depending on it, so BR-60's "in use" count must ignore them.
+   *
+   * Without this a user type that had been given permissions reported its own
+   * grant rows as usage: a role nobody held refused to be deleted, saying it
+   * was "used by 13 records" — the 13 being its own permissions, which the
+   * foreign key would have cascaded away anyway.
+   */
+  readonly usageExcludes?: readonly string[];
   readonly hasDescription?: boolean;
   readonly hasSortOrder?: boolean;
   /** Anything a caller should be told before editing. */
@@ -154,6 +164,9 @@ export const REFERENCE_LISTS: readonly ReferenceList[] = [
     hasDescription: true,
     hasSortOrder: true,
     extraColumns: ['is_superuser', 'is_manager'],
+    // Its own grants, not records that depend on it — and ON DELETE CASCADE
+    // removes them with the type.
+    usageExcludes: ['user_type_permissions'],
     note:
       'A type declares the privilege it confers, and that privilege is read ' +
       'from the type on every request — so changing these flags ' +

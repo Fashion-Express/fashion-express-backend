@@ -45,9 +45,12 @@ number of permissions each carries and how many accounts hold it.
 ]
 ```
 
-Editing the grants themselves is `PATCH /api/reference/user-types/:id` — see
-[reference.md](reference.md). Changing what a type confers changes it for every
-holder immediately (BR-56).
+`PATCH /api/reference/user-types/:id` edits a type's label, description, sort
+order and privilege flags — see [reference.md](reference.md). **The grants
+themselves are `PUT /api/users/types/:id/permissions`** (FR-00.4), which is
+administrator-only and off unless `ENABLE_ROLE_EDITING=true`; see
+[users.md](users.md). Either way, changing what a type confers changes it for
+every holder immediately (BR-56).
 
 ---
 

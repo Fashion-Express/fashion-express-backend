@@ -350,8 +350,58 @@ curl -s -b $JAR $BASE/users/types/4/permissions
 }
 ```
 
-`catalogue` is the whole set of 50 permissions, grouped by `module` for display.
+`catalogue` is the whole set of 57 permissions, grouped by `module` for display.
 
-There is **no endpoint to edit grants yet.** When one is added it must invalidate
-the permission cache, or the change will not be seen until restart (BR-56 requires
-it to take effect immediately).
+The `menu` module holds one entry per sidebar item (FR-00.2 mechanism 2). A menu
+permission decides only what is DRAWN — every page keeps its own guard, so
+removing one hides a link without revoking access to the URL.
+
+404 if there is no such type — an unknown id used to answer with an empty
+`granted`, which reads as a real role granting nothing.
+
+> **`PATCH /api/users/:id` refuses to change your own `userTypeId`** (403).
+> Privilege comes from the type (BR-56), so re-pointing your own account at
+> another type is changing your own privilege — and paired with the ability to
+> create a type it was a route from manager to administrator. It refuses for
+> everyone, an administrator included: demoting yourself is the one move with no
+> way back.
+
+## `PUT /api/users/types/:id/permissions`
+
+FR-00.4 — replace what a role grants. **Permission:** administrator
+(`@RequireSuperuser`) **plus** `manage_referencedata`.
+
+```bash
+curl -s -b $JAR -X PUT $BASE/users/types/4/permissions \
+  -H 'Content-Type: application/json' \
+  -d '{"permissions":["view_sale","add_sale","view_customer"]}'
+```
+
+The whole set is replaced, not merged: the screen submits a complete picture of
+what the role should confer, so two administrators editing at once cannot
+silently combine into a state neither chose. An empty array strips the role.
+
+Answers the same shape as the `GET` above.
+
+| Rule | Response |
+|------|----------|
+| Not an administrator (a manager is not enough) | 403 |
+| `ENABLE_ROLE_EDITING` is not `true` | 403 naming the variable |
+| The type is **unrestricted** (`is_superuser`) | 403 — it passes every check anyway, so editing its list would change nothing while appearing to |
+| The type is the caller's **own** | 403 |
+| A codename that is not in the catalogue | 400 naming it — never a silent drop |
+| No such type | 404 |
+
+**Why it is off by default.** Editing what a role confers is privilege
+escalation, so it takes the same shape as the cleanup tool (BR-42): a deployment
+turns it on deliberately.
+
+**The cache.** The permission set is cached per user type
+(`PermissionsService`), so this endpoint drops that type's entry **after** the
+transaction commits — BR-56 requires the change to reach every holder
+immediately, and an e2e test asserts a live session sees it with no restart. The
+cache is per process: behind more than one API instance, only the instance that
+served the write clears its copy.
+
+`GET /api/users/types/grants-info` reports `{ enabled, safeguards }` so a client
+can say why the screen is read-only instead of discovering it by failing a save.

@@ -210,7 +210,7 @@ Any number of part-payments; each gets a unique receipt number
 |------|----------|
 | **BR-09** total payments may not exceed the sale value | 400 naming the balance |
 | **BR-10** no payment of zero or less | 400 |
-| **BR-11** no payment on a cancelled sale or a quotation | 400 |
+| **BR-11** no payment on a cancelled sale (a quotation or draft may take an advance) | 400 |
 | **BR-62** the method must be `customer`-scoped | 400 |
 
 `PATCH /api/sale-payments/:id` and `DELETE /api/sale-payments/:id` edit and

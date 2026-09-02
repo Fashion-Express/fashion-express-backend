@@ -49,9 +49,9 @@ npm run migration:revert     # roll back the last one
 npm run db:reset             # drop schema + re-apply everything
 npm run seed:admin           # first Owner account (the API cannot create it)
 
-npm run test:db              # both suites (265 tests)
+npm run test:db              # both suites (282 tests)
 npm run test:schema          # 71 constraint/trigger/message tests (Jest)
-npm run test:e2e             # 194 API tests (node:test via ts-node)
+npm run test:e2e             # 211 API tests (node:test via ts-node)
 ```
 
 Both suites need `DATABASE_URL_TEST` and will truncate that database.

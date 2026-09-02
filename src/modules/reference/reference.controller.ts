@@ -85,7 +85,7 @@ export class ReferenceController {
     @Body() dto: CreateReferenceDto,
     @CurrentUser() actor: AuthUser,
   ): Promise<ReferenceRow> {
-    return this.reference.create(slug, dto, actor.id);
+    return this.reference.create(slug, dto, actor);
   }
 
   /** Editing a code is impossible by construction: the DTO has no such field (BR-59). */
@@ -97,7 +97,7 @@ export class ReferenceController {
     @Body() dto: UpdateReferenceDto,
     @CurrentUser() actor: AuthUser,
   ): Promise<ReferenceRow> {
-    return this.reference.update(slug, id, dto, actor.id);
+    return this.reference.update(slug, id, dto, actor);
   }
 
   @Delete(':list/:id')

@@ -1527,7 +1527,7 @@ cannot express — they are not weaker, but they carry no second line of defence
 | BR-08 no double finalisation | Status check in `finalize()` | App only |
 | **BR-09 sale not overpaid** | **`sale_not_overpaid` + rollup trigger** | **DB** |
 | BR-10 payment > 0 | `salepayment_amount_positive` | **DB** |
-| BR-11 no payment on cancelled/quote | View guard | App only |
+| BR-11 no payment on a cancelled sale | View guard | App only |
 | BR-12 stock returned on line removal | `sale_delete_item` view | App only |
 | BR-13 stock deducted on line addition | `sale_add_item` view | App only |
 | BR-14 only drafts deletable | `sale_delete` view | App only |
@@ -2930,6 +2930,14 @@ how the legacy system ended up with three overlapping authorisation mechanisms.
 is no copy to update — clearing `is_manager` on the Manager type demotes every manager on their
 next request. That is the intended behaviour, and it is also worth a confirmation dialog in the
 UI, since it is a wide-reaching change made from a small screen.
+
+The two privilege flags have no copy to go stale, but the *permission set* does:
+`PermissionsService` caches it per type. `PUT /api/users/types/:id/permissions`
+(FR-00.4) therefore drops that type's cache entry after its transaction commits,
+and an e2e test asserts a session signed in beforehand sees the change with no
+restart. The cache is per process — behind more than one API instance only the
+instance that served the write clears its copy, which is the one place this
+design is not yet honest about horizontal scaling.
 
 **Seeding matters more than it looks.** `user_type_id` is `NOT NULL` (BR-57), so the first user
 cannot be created before the types exist. Seed `user_types` in the very first migration, before

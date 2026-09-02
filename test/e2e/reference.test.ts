@@ -73,7 +73,7 @@ before(async () => {
 
   app = await createApp();
   await app.init();
-  server = app.getHttpServer() as Server;
+  server = app.getHttpServer();
 
   owner = await signIn('refowner', 'Ref-Owner-Pass-1');
   employee = await signIn('refstaff', 'Ref-Staff-Pass-1');

@@ -62,14 +62,17 @@ async function seedStaff(
 
 const OWNER_PW = 'Owner-Pass-123';
 const EMPLOYEE_PW = 'Employee-Pass-123';
+const MANAGER_PW = 'Manager-Pass-123';
 let ownerCookie: string;
 let employeeCookie: string;
+let managerCookie: string;
 let employeeId: string;
 
 before(async () => {
   await migrateTestDatabase();
   await loadFixture();
   await seedStaff('e2eowner', 'owner', OWNER_PW);
+  await seedStaff('e2emgr', 'manager', MANAGER_PW);
   employeeId = await seedStaff('e2estaff', 'employee', EMPLOYEE_PW);
 
   app = await createApp();
@@ -77,6 +80,7 @@ before(async () => {
   server = app.getHttpServer();
 
   ownerCookie = await signIn('e2eowner', OWNER_PW);
+  managerCookie = await signIn('e2emgr', MANAGER_PW);
   employeeCookie = await signIn('e2estaff', EMPLOYEE_PW);
 });
 
@@ -430,5 +434,362 @@ describe('referential errors read as validation, not as deletion advice', () => 
       response.body.message,
       'The customer must belong to the same shop as the sale.',
     );
+  });
+});
+
+/**
+ * FR-00.4 — roles are containers for permissions, granted and revoked per role.
+ *
+ * This suite is LAST on purpose. The happy path changes what the employee type
+ * confers, which is exactly the point of BR-56 — and it would otherwise pull the
+ * rug out from under the `§10.3 permissions gate every route` cases above, which
+ * assert that an employee is refused the staff list.
+ */
+describe('FR-00.4 editing what a role grants', () => {
+  let employeeTypeId = '';
+  let ownerTypeId = '';
+  let seeded: string[] = [];
+  const path = (id: string) => `/api/users/types/${id}/permissions`;
+
+  before(async () => {
+    const rows = await query<{ id: string; code: string }>(
+      `SELECT id::text, code FROM user_types WHERE code IN ('employee', 'owner')`,
+    );
+    employeeTypeId = rows.find((r) => r.code === 'employee')!.id;
+    ownerTypeId = rows.find((r) => r.code === 'owner')!.id;
+    seeded = (
+      await query<{ codename: string }>(
+        `SELECT p.codename FROM user_type_permissions utp
+           JOIN permissions p ON p.id = utp.permission_id
+          WHERE utp.user_type_id = $1`,
+        [employeeTypeId],
+      )
+    ).map((r) => r.codename);
+    process.env.ENABLE_ROLE_EDITING = 'true';
+  });
+
+  /*
+   * Put the employee type back however the run ended.
+   *
+   * `loadFixture()` does not reset `user_type_permissions` — the grants come
+   * from the seed migration — so a test that failed part-way through the happy
+   * path would leave `view_user` granted, and every later run of this file
+   * would start in a world where the cases above ("an employee is refused the
+   * staff list") are false. That is not hypothetical; it happened.
+   */
+  after(async () => {
+    delete process.env.ENABLE_ROLE_EDITING;
+    await query(`DELETE FROM user_type_permissions WHERE user_type_id = $1`, [
+      employeeTypeId,
+    ]);
+    if (seeded.length > 0) {
+      await query(
+        `INSERT INTO user_type_permissions (user_type_id, permission_id)
+           SELECT $1, p.id FROM permissions p WHERE p.codename = ANY($2)`,
+        [employeeTypeId, seeded],
+      );
+    }
+  });
+
+  test('an employee cannot edit grants', async () => {
+    const r = await request(server)
+      .put(path(employeeTypeId))
+      .set('Cookie', employeeCookie)
+      .send({ permissions: ['view_user'] });
+    assert.equal(r.status, 403);
+  });
+
+  /** The point of restricting this to unrestricted accounts: a manager holds
+   *  `manage_referencedata`, and without the superuser gate could grant
+   *  themselves the two things their own role deliberately withholds. */
+  test('a manager cannot edit grants either', async () => {
+    const r = await request(server)
+      .put(path(employeeTypeId))
+      .set('Cookie', managerCookie)
+      .send({ permissions: ['view_user'] });
+    assert.equal(r.status, 403);
+  });
+
+  test('BR-42-style: refused unless deliberately enabled', async () => {
+    delete process.env.ENABLE_ROLE_EDITING;
+    const r = await request(server)
+      .put(path(employeeTypeId))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: ['view_user'] });
+    process.env.ENABLE_ROLE_EDITING = 'true';
+
+    assert.equal(r.status, 403);
+    assert.match(r.body.message, /ENABLE_ROLE_EDITING/);
+  });
+
+  /**
+   * An unrestricted type passes every check through `is_superuser`, so editing
+   * its list would change nothing while appearing to. Note this also covers
+   * "you cannot edit your own role" for every caller who can reach this route:
+   * only a superuser may, and a superuser's own type is by definition
+   * unrestricted, so this refusal fires first. The own-role check in the service
+   * is defence for a future in which the guard is widened.
+   */
+  test('an unrestricted role cannot be edited', async () => {
+    const r = await request(server)
+      .put(path(ownerTypeId))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: ['view_user'] });
+    assert.equal(r.status, 403);
+    assert.match(r.body.message, /unrestricted/i);
+  });
+
+  test('an unknown codename is refused by name, never dropped', async () => {
+    const r = await request(server)
+      .put(path(employeeTypeId))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: ['view_sale', 'view_everything'] });
+    assert.equal(r.status, 400);
+    assert.match(r.body.message, /view_everything/);
+  });
+
+  test('an unknown user type is 404', async () => {
+    const r = await request(server)
+      .put(path('999999'))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: [] });
+    assert.equal(r.status, 404);
+  });
+
+  /** A `bigint` column: without a shape check this is a query error, not a 404. */
+  test('a non-numeric type id is 404, not a 500', async () => {
+    const r = await request(server)
+      .get(path('abc'))
+      .set('Cookie', ownerCookie);
+    assert.equal(r.status, 404);
+  });
+
+  test('the read endpoint 404s on an unknown type too', async () => {
+    const r = await request(server)
+      .get(path('999999'))
+      .set('Cookie', ownerCookie);
+    assert.equal(r.status, 404);
+  });
+
+  /**
+   * The escalation this closes, as a regression test.
+   *
+   * A manager holds `manage_referencedata` AND `change_user`. Before these two
+   * refusals they could mint an unrestricted type and step into it in two
+   * requests, going from manager to full administrator without anyone granting
+   * them anything. Both halves are asserted, because either one alone leaves
+   * the door open.
+   */
+  test('a manager cannot mint an unrestricted role', async () => {
+    const r = await request(server)
+      .post('/api/reference/user-types')
+      .set('Cookie', managerCookie)
+      .send({ code: 'escalated', label: 'Escalated', isSuperuser: true });
+
+    assert.equal(r.status, 403);
+    assert.match(r.body.message, /administrators/i);
+
+    const created = await query<{ id: string }>(
+      `SELECT id::text FROM user_types WHERE code = 'escalated'`,
+    );
+    assert.equal(created.length, 0, 'nothing was written');
+  });
+
+  test('a manager cannot promote an existing role either', async () => {
+    const r = await request(server)
+      .patch(`/api/reference/user-types/${employeeTypeId}`)
+      .set('Cookie', managerCookie)
+      .send({ isManager: true });
+    assert.equal(r.status, 403);
+  });
+
+  test('nobody may re-point their own account at another role', async () => {
+    const me = await request(server).get('/api/me').set('Cookie', ownerCookie);
+    const r = await request(server)
+      .patch(`/api/users/${me.body.id}`)
+      .set('Cookie', ownerCookie)
+      .send({ userTypeId: employeeTypeId });
+
+    assert.equal(r.status, 403);
+    assert.match(r.body.message, /your own role/i);
+
+    // Still an owner.
+    const after_ = await request(server).get('/api/me').set('Cookie', ownerCookie);
+    assert.equal(after_.body.userType.isSuperuser, true);
+  });
+
+  /**
+   * BR-60 — an entry "in use" cannot be deleted, but its own permission grants
+   * are not usage. A role nobody holds used to refuse deletion, reporting its
+   * own grants as the records using it.
+   */
+  test('a role holding grants but no accounts can still be deleted', async () => {
+    const created = await request(server)
+      .post('/api/reference/user-types')
+      .set('Cookie', ownerCookie)
+      .send({ code: 'temprole', label: 'Temp role' });
+    assert.equal(created.status, 201);
+    const tempId: string = created.body.id;
+
+    const granted = await request(server)
+      .put(path(tempId))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: ['view_sale', 'view_customer'] });
+    assert.equal(granted.status, 200);
+
+    const usage = await request(server)
+      .get(`/api/reference/user-types/${tempId}/usage`)
+      .set('Cookie', ownerCookie);
+    assert.equal(usage.body.total, 0, 'its own grants are not usage');
+
+    const removed = await request(server)
+      .delete(`/api/reference/user-types/${tempId}`)
+      .set('Cookie', ownerCookie);
+    assert.equal(removed.status, 204);
+
+    // The grants went with it, by ON DELETE CASCADE.
+    const left = await query(
+      `SELECT 1 FROM user_type_permissions WHERE user_type_id = $1`,
+      [tempId],
+    );
+    assert.equal(left.length, 0);
+  });
+
+  /**
+   * FR-00.2 mechanism 2 — one menu permission per sidebar entry.
+   *
+   * The migration that added the last seven had one job beyond creating them:
+   * change nobody's sidebar. So the assertion is who holds them, not that they
+   * exist.
+   */
+  test('every navigation entry has a menu permission of its own', async () => {
+    const r = await request(server)
+      .get(path(employeeTypeId))
+      .set('Cookie', ownerCookie);
+
+    const menu = r.body.catalogue
+      .filter((p: { module: string }) => p.module === 'menu')
+      .map((p: { codename: string }) => p.codename)
+      .sort();
+
+    assert.deepEqual(menu, [
+      'view_bills_menu',
+      'view_categories_menu',
+      'view_customers_menu',
+      'view_departments_menu',
+      'view_expenses_menu',
+      'view_inventory_menu',
+      'view_job_positions_menu',
+      'view_reports_menu',
+      'view_review_bills_menu',
+      'view_roles_menu',
+      'view_sales_menu',
+      'view_shops_menu',
+      'view_suppliers_menu',
+      'view_users_menu',
+    ]);
+
+    // No sidebar entry may be gated on a record permission any more, so the
+    // menu permissions have to outnumber what the old arrangement covered.
+    assert.equal(menu.length, 14);
+  });
+
+  test('the new menu permissions leave every sidebar exactly as it was', async () => {
+    const held = async (typeCode: string) => {
+      const rows = await query<{ codename: string }>(
+        `SELECT p.codename FROM user_type_permissions utp
+           JOIN permissions p ON p.id = utp.permission_id
+           JOIN user_types t ON t.id = utp.user_type_id
+          WHERE t.code = $1 AND p.module = 'menu'`,
+        [typeCode],
+      );
+      return new Set(rows.map((row) => row.codename));
+    };
+
+    const [owner, manager, finance, employee] = await Promise.all([
+      held('owner'),
+      held('manager'),
+      held('finance'),
+      held('employee'),
+    ]);
+
+    // My bills was visible to all four, and still is.
+    for (const [name, set] of [
+      ['owner', owner],
+      ['manager', manager],
+      ['finance', finance],
+      ['employee', employee],
+    ] as const) {
+      assert.ok(set.has('view_bills_menu'), `${name} keeps My bills`);
+    }
+
+    // Review bills, Users and the reference screens were owner + manager only.
+    for (const codename of [
+      'view_review_bills_menu',
+      'view_users_menu',
+      'view_categories_menu',
+      'view_job_positions_menu',
+      'view_departments_menu',
+    ]) {
+      assert.ok(owner.has(codename), `owner keeps ${codename}`);
+      assert.ok(manager.has(codename), `manager keeps ${codename}`);
+      assert.ok(!finance.has(codename), `finance still lacks ${codename}`);
+      assert.ok(!employee.has(codename), `employee still lacks ${codename}`);
+    }
+
+    // Roles & permissions is administrator-only.
+    assert.ok(owner.has('view_roles_menu'));
+    assert.ok(!manager.has('view_roles_menu'));
+
+    // Finance held view_reports_menu but has never seen Reports — the entry and
+    // the page are both manager-only. A grant that does nothing is a grant that
+    // misleads, so the migration removes it.
+    assert.ok(!finance.has('view_reports_menu'));
+  });
+
+  /**
+   * BR-56, and the whole reason this endpoint exists — the permission set is
+   * cached per user type, so a write that did not drop the cache would take
+   * effect only after a restart. The assertion is made on a session that was
+   * signed in BEFORE the change, with no restart in between.
+   */
+  test('BR-56 a granted permission reaches live sessions immediately', async () => {
+    const before_ = await request(server)
+      .get('/api/users')
+      .set('Cookie', employeeCookie);
+    assert.equal(before_.status, 403, 'an employee starts without view_user');
+
+    const current = await request(server)
+      .get(path(employeeTypeId))
+      .set('Cookie', ownerCookie);
+    assert.equal(current.status, 200);
+    const original: string[] = current.body.granted;
+    assert.deepEqual(original, [...seeded].sort(), 'starts from the seeded set');
+
+    const granted = await request(server)
+      .put(path(employeeTypeId))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: [...original, 'view_user'] });
+    assert.equal(granted.status, 200);
+    assert.ok(granted.body.granted.includes('view_user'));
+
+    // No restart, same cookie.
+    const after_ = await request(server)
+      .get('/api/users')
+      .set('Cookie', employeeCookie);
+    assert.equal(after_.status, 200, 'the grant took effect immediately');
+
+    // And revoking is seen just as fast.
+    const revoked = await request(server)
+      .put(path(employeeTypeId))
+      .set('Cookie', ownerCookie)
+      .send({ permissions: original });
+    assert.equal(revoked.status, 200);
+    assert.deepEqual(revoked.body.granted, original);
+
+    const restored = await request(server)
+      .get('/api/users')
+      .set('Cookie', employeeCookie);
+    assert.equal(restored.status, 403, 'the revoke took effect immediately');
   });
 });

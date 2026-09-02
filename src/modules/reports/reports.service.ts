@@ -234,13 +234,34 @@ export class ReportsService {
    */
   async customerSummary(): Promise<ExcelJS.Buffer> {
     const workbook = this.newWorkbook();
+
+    /*
+     * `addSheet` writes `Object.values(row)` positionally, so THE SELECT ORDER
+     * IS THE COLUMN ORDER. This query used to end `..., due, orders` under
+     * headers reading `Orders, Invoiced, Received, Due`, which shifted every
+     * figure one column left and parked the order count under "Due" — a
+     * customer owing 8,000.00 reported a due of 3.00, the number of orders they
+     * had placed. Keep the two lists below in the same order.
+     */
+    const headers = [
+      'Customer ID',
+      'Name',
+      'Company',
+      'Phone',
+      'Shop',
+      'Orders',
+      'Invoiced',
+      'Received',
+      'Due',
+    ];
+
     const rows = rowsOf<Record<string, string>>(
       await this.dataSource.query(
-        `SELECT c.customer_id, c.name, c.company, sh.name AS shop,
+        `SELECT c.customer_id, c.name, c.company, c.phone, sh.name AS shop,
+                COALESCE(s.orders, 0)::text     AS orders,
                 COALESCE(s.invoiced, 0)::text   AS invoiced,
                 COALESCE(s.received, 0)::text   AS received,
-                COALESCE(s.due, 0)::text        AS due,
-                COALESCE(s.orders, 0)::text     AS orders
+                COALESCE(s.due, 0)::text        AS due
            FROM customers c
            JOIN shops sh ON sh.id = c.shop_id
            LEFT JOIN LATERAL (
@@ -252,43 +273,40 @@ export class ReportsService {
       ),
     );
 
-    const sheet = this.addSheet(
-      workbook,
-      'Customer summary',
-      [
-        'Customer ID',
-        'Name',
-        'Company',
-        'Shop',
-        'Orders',
-        'Invoiced',
-        'Received',
-        'Due',
-      ],
-      rows,
-      { money: ['Invoiced', 'Received', 'Due'] },
-    );
+    const sheet = this.addSheet(workbook, 'Customer summary', headers, rows, {
+      money: ['Invoiced', 'Received', 'Due'],
+      count: ['Orders'],
+    });
 
-    // The grand-total row FR-09.4 asks for. It is a real SUM formula rather
-    // than a computed constant, so the figure survives someone filtering or
-    // sorting the sheet.
+    /*
+     * The grand-total row FR-09.4 asks for. It is a real SUM formula rather
+     * than a computed constant, so the figure survives someone filtering or
+     * sorting the sheet.
+     *
+     * The letters come from where each header actually sits. Hard-coded ones
+     * are what let the column bug above go unnoticed: they kept totalling
+     * whatever had drifted into F, G and H.
+     */
+    const columnOf = (header: string) =>
+      sheet.getColumn(headers.indexOf(header) + 1).letter;
+    const summed = new Set(['Orders', 'Invoiced', 'Received', 'Due']);
+
     const last = sheet.rowCount;
-    const total = sheet.addRow([
-      'TOTAL',
-      '',
-      '',
-      '',
-      '',
-      { formula: `SUM(F2:F${last})` },
-      { formula: `SUM(G2:G${last})` },
-      { formula: `SUM(H2:H${last})` },
-    ]);
+    const total = sheet.addRow(
+      headers.map((header, index) => {
+        if (index === 0) return 'TOTAL';
+        if (!summed.has(header)) return '';
+        const letter = columnOf(header);
+        return { formula: `SUM(${letter}2:${letter}${last})` };
+      }),
+    );
     total.font = { bold: true };
     total.eachCell((cell) => {
       cell.border = { top: { style: 'double' } };
     });
-    for (const column of ['F', 'G', 'H']) {
-      sheet.getCell(`${column}${total.number}`).numFmt = '#,##0.00';
+    for (const header of summed) {
+      sheet.getCell(`${columnOf(header)}${total.number}`).numFmt =
+        header === 'Orders' ? '#,##0' : '#,##0.00';
     }
 
     return workbook.xlsx.writeBuffer();
@@ -306,7 +324,7 @@ export class ReportsService {
     name: string,
     headers: string[],
     rows: Array<Record<string, unknown>>,
-    formats: { money?: string[]; number?: string[] } = {},
+    formats: { money?: string[]; number?: string[]; count?: string[] } = {},
   ): ExcelJS.Worksheet {
     const sheet = workbook.addWorksheet(name);
     const header = sheet.addRow(headers);
@@ -322,6 +340,9 @@ export class ReportsService {
 
     const moneyColumns = new Set(formats.money ?? []);
     const numberColumns = new Set(formats.number ?? []);
+    // Whole things — orders, items. `number` formats to three decimals for
+    // quantities, which reads as 3.000 orders.
+    const countColumns = new Set(formats.count ?? []);
 
     for (const row of rows) {
       sheet.addRow(
@@ -329,7 +350,9 @@ export class ReportsService {
           const columnName = headers[index];
           if (
             value !== null &&
-            (moneyColumns.has(columnName) || numberColumns.has(columnName))
+            (moneyColumns.has(columnName) ||
+              numberColumns.has(columnName) ||
+              countColumns.has(columnName))
           ) {
             // Text will not sum. Convert only here, at the boundary.
             return Number(value);
@@ -344,6 +367,7 @@ export class ReportsService {
       column.width = Math.max(12, Math.min(40, columnName.length + 6));
       if (moneyColumns.has(columnName)) column.numFmt = '#,##0.00';
       if (numberColumns.has(columnName)) column.numFmt = '#,##0.000';
+      if (countColumns.has(columnName)) column.numFmt = '#,##0';
     });
 
     return sheet;

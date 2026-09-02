@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsBoolean,
   IsDateString,
   IsIn,
@@ -90,6 +91,30 @@ export class UpdateUserDto {
 
 export class SetPasswordDto {
   @IsString() @MinLength(8) password!: string;
+}
+
+/**
+ * FR-00.4 — what a role grants, replaced whole.
+ *
+ * The whole set is sent rather than a list of additions and removals: the
+ * screen submits a complete picture of what the role should confer, so two
+ * administrators editing at once cannot silently merge into a state neither of
+ * them chose. Sending an empty array is legitimate — it strips the role.
+ *
+ * The shape check mirrors the database's own `permissions_codename_shape`
+ * constraint, so a malformed codename fails with a readable message. Whether
+ * each name actually EXISTS is checked in the service against the catalogue,
+ * because a typo that is silently dropped would quietly under-grant a role.
+ */
+export class SetGrantsDto {
+  @IsArray()
+  @IsString({ each: true })
+  @Matches(/^[a-z][a-z0-9_]*$/, {
+    each: true,
+    message:
+      'each permission must be a codename: lower-case letters, digits and underscores',
+  })
+  permissions!: string[];
 }
 
 export class ListUsersQuery {
