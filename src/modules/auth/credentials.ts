@@ -1,6 +1,5 @@
-import { createLocalAccountIssuer } from 'better-auth';
 import type { EntityManager } from 'typeorm';
-import { auth } from '../../config/auth';
+import { getAuth } from '../../config/auth';
 
 /**
  * Provisioning a staff login.
@@ -27,6 +26,20 @@ import { auth } from '../../config/auth';
 /** The provider id and synthetic issuer better-auth looks for at sign-in. */
 const CREDENTIAL_PROVIDER = 'credential';
 
+/** better-auth's request context. ESM, so loaded through `getAuth()`. */
+const authContext = async () => (await getAuth()).$context;
+
+/**
+ * The synthetic issuer a local credential is filed under.
+ *
+ * `better-auth` is ESM and this bundle is CommonJS — see config/auth.ts for why
+ * that means `import()` rather than a top-level import.
+ */
+async function localIssuer(): Promise<string> {
+  const { createLocalAccountIssuer } = await import('better-auth');
+  return createLocalAccountIssuer(CREDENTIAL_PROVIDER);
+}
+
 /**
  * Attach a password credential to an existing staff account.
  *
@@ -37,12 +50,12 @@ export async function createCredential(
   userId: string,
   password: string,
 ): Promise<void> {
-  const ctx = await auth.$context;
+  const ctx = await authContext();
 
   await ctx.internalAdapter.linkAccount({
     userId,
     providerId: CREDENTIAL_PROVIDER,
-    issuer: createLocalAccountIssuer(CREDENTIAL_PROVIDER),
+    issuer: await localIssuer(),
     // For a local credential the account id *is* the user id — that is the
     // "stable local subject" findCredentialAccount resolves against.
     accountId: userId,
@@ -58,7 +71,7 @@ export async function replaceCredential(
   userId: string,
   password: string,
 ): Promise<void> {
-  const ctx = await auth.$context;
+  const ctx = await authContext();
   const existing = await ctx.internalAdapter.findCredentialAccount(userId);
 
   if (!existing) {
@@ -92,7 +105,7 @@ export async function insertCredential(
   userId: string,
   password: string,
 ): Promise<void> {
-  const ctx = await auth.$context;
+  const ctx = await authContext();
 
   // `user_id` is bigint and `account_id` is varchar, so the same value has to
   // be bound twice — reusing one placeholder for both makes PostgreSQL try to
@@ -104,7 +117,7 @@ export async function insertCredential(
     [
       userId,
       CREDENTIAL_PROVIDER,
-      createLocalAccountIssuer(CREDENTIAL_PROVIDER),
+      await localIssuer(),
       userId,
       await ctx.password.hash(password),
     ],
@@ -116,7 +129,7 @@ export async function passwordPolicy(): Promise<{
   minLength: number;
   maxLength: number;
 }> {
-  const ctx = await auth.$context;
+  const ctx = await authContext();
   return {
     minLength: ctx.password.config.minPasswordLength,
     maxLength: ctx.password.config.maxPasswordLength,
