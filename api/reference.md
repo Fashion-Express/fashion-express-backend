@@ -323,3 +323,15 @@ cached copy to go stale.
 
 `GET /api/users/types` remains the picker for the staff forms; it returns the
 same rows without needing `manage_referencedata`.
+
+**Writing `isSuperuser` or `isManager` is restricted to administrators**, on
+create and on update alike, and is the one place this module asks for more than
+`manage_referencedata`. Setting them is not editing a lookup list, it is handing
+out privilege: a manager holds both `manage_referencedata` and `change_user`, so
+without this they could create an unrestricted type and point their own account
+at it. The other half of that door is `PATCH /api/users/:id`, which refuses to
+change the caller's own `userTypeId` — see [users.md](users.md).
+
+Deleting a user type counts the **accounts** holding it, not its permission
+grants: those are part of the type and the foreign key cascades them away with
+it. A role nobody holds is deletable however many permissions it carries.

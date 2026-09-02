@@ -22,7 +22,9 @@ import type { CreateSalePaymentDto, UpdateSalePaymentDto } from './dto';
  *    rollup trigger keeps true, so it holds even against a bulk write.
  *  - **BR-10** no payment of zero or less. A zero payment produces a receipt
  *    number and a ledger line for no money — noise in an audit trail.
- *  - **BR-11** no payment against a cancelled sale, nor against a quotation.
+ *  - **BR-11** no payment against a cancelled sale. A quotation or a draft
+ *    may take one — it is an advance, and it counts toward no money figure
+ *    until the sale is finalised.
  *
  * Every payment posts a **Credit** to the ledger in the same transaction
  * (FR-08.1, BR-38), and edits and deletes carry the ledger with them (BR-40).
@@ -343,15 +345,15 @@ export class SalePaymentsService {
     );
   }
 
-  /** BR-11 — cancelled sales and quotations cannot take payment. */
+  /**
+   * BR-11 — a cancelled sale cannot take payment. Every other status can,
+   * quotations included: an advance against an offer is ordinary trade, and
+   * the money is held against the sale until it is finalised, at which point
+   * it starts counting toward revenue like any other payment.
+   */
   private assertPayable(statusCode: string): void {
     if (statusCode === 'cancelled') {
       throw new BadRequestException('A cancelled sale cannot take a payment.');
-    }
-    if (statusCode === 'quote') {
-      throw new BadRequestException(
-        'A quotation cannot take a payment. Convert it to an invoice first.',
-      );
     }
   }
 

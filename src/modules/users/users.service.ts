@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -10,6 +11,7 @@ import { affectedRows, firstRow, rowsOf } from '../../common/sql';
 import { PAGE_SIZE, type Page, toPage } from '../../common/pagination';
 import { TransactionService } from '../../common/transaction';
 import { insertCredential, replaceCredential } from '../auth/credentials';
+import type { AuthUser } from '../auth/auth-user';
 import { PermissionsService } from '../auth/permissions.service';
 import type { CreateUserDto, ListUsersQuery, UpdateUserDto } from './dto';
 
@@ -211,6 +213,24 @@ export class UsersService {
       sets.push(`${column} = $${params.length}`);
     };
 
+    /*
+     * BR-56 — a person's privilege is their type, so re-pointing your own
+     * account at another type IS changing your own privilege. Combined with the
+     * ability to create a type, an unguarded self-repoint let a manager mint an
+     * unrestricted role and step into it. The other half of that door is shut
+     * in `ReferenceService.applyPrivilegeFlags`; this is this half.
+     *
+     * It refuses in both directions and for everyone, an administrator
+     * included: demoting yourself is the one move with no way back, since the
+     * account that could undo it is the one you just gave up.
+     */
+    if (dto.userTypeId !== undefined && id === actorId) {
+      throw new ForbiddenException(
+        'You cannot change your own role — that is changing your own ' +
+          'privilege. Ask another administrator.',
+      );
+    }
+
     if (dto.name !== undefined) set('name', dto.name);
     if (dto.email !== undefined) set('email', dto.email);
     if (dto.firstName !== undefined) set('first_name', dto.firstName);
@@ -296,6 +316,11 @@ export class UsersService {
   /**
    * The permissions a type grants, and the full catalogue to choose from.
    * Editing grants must invalidate the cache or the change is not seen (BR-56).
+   *
+   * The existence check is not ceremony: without it an unknown id answered with
+   * `{ granted: [], catalogue: [...] }` — an empty matrix that looks like a real
+   * role granting nothing, which an administration screen would happily offer to
+   * save over.
    */
   async grantsFor(userTypeId: string): Promise<{
     granted: string[];
@@ -306,11 +331,165 @@ export class UsersService {
       module: string;
     }>;
   }> {
+    await this.requireUserType(userTypeId);
+
     const granted = await this.permissions.forUserType(userTypeId);
     return {
       granted: [...granted].sort(),
       catalogue: await this.permissions.catalogue(),
     };
+  }
+
+  private async requireUserType(userTypeId: string): Promise<{
+    id: string;
+    code: string;
+    label: string;
+    is_superuser: boolean;
+  }> {
+    /*
+     * The id reaches a `bigint` column as a raw string, so a non-numeric one is
+     * a Postgres syntax error — a 500 where this route promises a 404. Checked
+     * before the query rather than caught after it.
+     */
+    if (!/^\d+$/.test(userTypeId)) {
+      throw new NotFoundException('No such user type.');
+    }
+
+    const row = firstRow<{
+      id: string;
+      code: string;
+      label: string;
+      is_superuser: boolean;
+    }>(
+      await this.dataSource.query(
+        `SELECT id::text, code, label, is_superuser FROM user_types WHERE id = $1`,
+        [userTypeId],
+      ),
+    );
+    if (!row) throw new NotFoundException('No such user type.');
+    return row;
+  }
+
+  /**
+   * BR-42's shape, applied to grants: a capability this dangerous is off unless
+   * a deployment deliberately turns it on. Editing what a role confers is
+   * privilege escalation by definition, so it does not ship enabled.
+   */
+  private assertGrantEditingEnabled(): void {
+    if (process.env.ENABLE_ROLE_EDITING !== 'true') {
+      throw new ForbiddenException(
+        'Editing role permissions is disabled. It must be deliberately ' +
+          'enabled with ENABLE_ROLE_EDITING=true.',
+      );
+    }
+  }
+
+  /** What the administration screen needs to know before it offers to save. */
+  grantsInfo(): { enabled: boolean; safeguards: string[] } {
+    return {
+      enabled: process.env.ENABLE_ROLE_EDITING === 'true',
+      safeguards: [
+        'Restricted to administrators.',
+        'Off unless ENABLE_ROLE_EDITING=true.',
+        'The role you hold yourself cannot be edited.',
+        'An unrestricted role cannot be edited — it passes every check anyway.',
+      ],
+    };
+  }
+
+  /**
+   * FR-00.4 — replace what a role grants.
+   *
+   * BR-56: this changes what every holder of the type may do, immediately. The
+   * permission set is cached per type, so the cache MUST be dropped once the
+   * new rows are committed or the change is invisible until a restart — that is
+   * the gap `api/users.md` warned about, and step 4 below is what closes it.
+   *
+   * Three refusals stand in front of the write, and each answers a different
+   * way to shoot yourself:
+   *
+   *  - an **unrestricted** type is read-only. `is_superuser` short-circuits every
+   *    check, so editing its list changes nothing real while appearing to.
+   *  - **your own** type is read-only, so no one can escalate their own
+   *    privilege or revoke their way out of the screen in a single click.
+   *  - an unknown codename is a **400**, never a silent drop: a typo that
+   *    vanished would under-grant the role and nothing would say so.
+   */
+  async setGrants(
+    userTypeId: string,
+    codenames: string[],
+    actor: AuthUser,
+  ): Promise<{
+    granted: string[];
+    catalogue: Array<{
+      id: string;
+      codename: string;
+      label: string;
+      module: string;
+    }>;
+  }> {
+    this.assertGrantEditingEnabled();
+
+    const type = await this.requireUserType(userTypeId);
+
+    if (type.is_superuser) {
+      throw new ForbiddenException(
+        `"${type.label}" has unrestricted access, so it passes every ` +
+          'permission check regardless of what is listed here. Its grants ' +
+          'cannot be edited.',
+      );
+    }
+
+    if (userTypeId === actor.userTypeId) {
+      throw new ForbiddenException(
+        'You cannot change the permissions of the role you hold yourself. ' +
+          'Ask another administrator, or change your own role first.',
+      );
+    }
+
+    // De-duplicate: the same codename twice would trip the composite primary
+    // key on `user_type_permissions` and read as a server error.
+    const wanted = [...new Set(codenames)];
+
+    if (wanted.length > 0) {
+      const known = rowsOf<{ codename: string }>(
+        await this.dataSource.query(
+          `SELECT codename FROM permissions WHERE codename = ANY($1)`,
+          [wanted],
+        ),
+      ).map((row) => row.codename);
+
+      const unknown = wanted.filter((name) => !known.includes(name));
+      if (unknown.length > 0) {
+        throw new BadRequestException(
+          `No such permission: ${unknown.join(', ')}.`,
+        );
+      }
+    }
+
+    await this.transactions.run(async (manager) => {
+      await manager.query(
+        `DELETE FROM user_type_permissions WHERE user_type_id = $1`,
+        [userTypeId],
+      );
+      if (wanted.length > 0) {
+        await manager.query(
+          `INSERT INTO user_type_permissions (user_type_id, permission_id)
+             SELECT $1, p.id FROM permissions p WHERE p.codename = ANY($2)`,
+          [userTypeId, wanted],
+        );
+      }
+    });
+
+    /*
+     * AFTER the commit, never inside it. Invalidating within the transaction
+     * leaves a window in which another request refills the cache by reading the
+     * rows this transaction has not yet committed — locking in the old set
+     * behind a cache that now believes it is fresh.
+     */
+    this.permissions.invalidate(userTypeId);
+
+    return this.grantsFor(userTypeId);
   }
 
   private async resolveStatusId(

@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
 } from '@nestjs/common';
 import type { Page } from '../../common/pagination';
@@ -20,6 +21,7 @@ import {
 import {
   CreateUserDto,
   ListUsersQuery,
+  SetGrantsDto,
   SetPasswordDto,
   UpdateUserDto,
 } from './dto';
@@ -50,10 +52,43 @@ export class UsersController {
     return this.users.userTypes();
   }
 
+  /**
+   * Whether grants may be edited here at all, and what stands in the way.
+   *
+   * Declared BEFORE `types/:id/permissions` — Nest matches in declaration order
+   * and `grants-info` would otherwise be read as an `:id`.
+   */
+  @Get('types/grants-info')
+  @RequirePermission('manage_referencedata')
+  grantsInfo() {
+    return this.users.grantsInfo();
+  }
+
+  /** Reads stay on `manage_referencedata`: a manager may SEE who can do what. */
   @Get('types/:id/permissions')
   @RequirePermission('manage_referencedata')
   grants(@Param('id') id: string) {
     return this.users.grantsFor(id);
+  }
+
+  /**
+   * FR-00.4 — replace what a role grants (BR-56: for every holder, at once).
+   *
+   * `@RequireSuperuser` and not a permission: anyone who can edit grants can
+   * grant themselves anything, so this is a privilege level rather than a
+   * capability — the same reasoning that puts the cleanup tool behind it
+   * (BR-41). `manage_referencedata` rides along so the route reads honestly
+   * beside its sibling.
+   */
+  @Put('types/:id/permissions')
+  @RequireSuperuser()
+  @RequirePermission('manage_referencedata')
+  setGrants(
+    @Param('id') id: string,
+    @Body() dto: SetGrantsDto,
+    @CurrentUser() actor: AuthUser,
+  ) {
+    return this.users.setGrants(id, dto.permissions, actor);
   }
 
   /** Active staff for a picker. Before `:id`, or 'options' matches as an id. */

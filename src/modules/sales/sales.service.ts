@@ -294,12 +294,10 @@ export class SalesService {
       }
 
       if (dto.initialPayment) {
-        // BR-11 — a quotation cannot take payment.
-        if (status.code === 'quote') {
-          throw new BadRequestException(
-            'A quotation cannot take a payment. Convert it to an invoice first.',
-          );
-        }
+        // BR-11 — an advance may be taken against a quotation as well as a
+        // draft; only a cancelled sale refuses one. The money sits on the sale
+        // and starts counting the moment it is finalised, exactly as a draft's
+        // first payment does.
         await this.payments.write(manager, saleId, dto.initialPayment, user.id);
       }
 

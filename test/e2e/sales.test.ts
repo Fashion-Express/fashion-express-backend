@@ -406,14 +406,19 @@ describe('FR-02.3 quotations', () => {
     assert.equal(r.body.total_amount, '66.00');
   });
 
-  test('BR-11 a quotation cannot take a payment', async () => {
+  test('BR-11 a quotation takes an advance, and keeps it through convert', async () => {
     const product = await stockedProduct();
     const quote = await as(admin).post('/api/sales', {
       customerId: await customerId(),
       shopId: '1',
       status: 'quote',
       items: [
-        { itemType: 'inventory', inventoryItemId: product, quantity: '1' },
+        {
+          itemType: 'inventory',
+          inventoryItemId: product,
+          quantity: '1',
+          unitPrice: '100.00',
+        },
       ],
     });
     const r = await as(admin).post(`/api/sales/${quote.body.id}/payments`, {
@@ -421,7 +426,46 @@ describe('FR-02.3 quotations', () => {
       paymentDate: '2026-08-26',
       paymentMethodId: await methodId('customer', 'cash'),
     });
-    assert.equal(r.status, 400);
+    assert.equal(r.status, 201);
+
+    // BR-09 still holds against the quotation's own total.
+    const over = await as(admin).post(`/api/sales/${quote.body.id}/payments`, {
+      amount: '95.00',
+      paymentDate: '2026-08-26',
+      paymentMethodId: await methodId('customer', 'cash'),
+    });
+    assert.equal(over.status, 400);
+
+    // Converting to a draft invoice carries the advance with it.
+    const converted = await as(admin).post(
+      `/api/sales/${quote.body.id}/convert`,
+    );
+    assert.equal(converted.body.status_code, 'draft');
+    assert.equal(converted.body.amount_paid, '10.00');
+  });
+
+  test('BR-11 an advance may be taken as a quotation is created', async () => {
+    const product = await stockedProduct();
+    const quote = await as(admin).post('/api/sales', {
+      customerId: await customerId(),
+      shopId: '1',
+      status: 'quote',
+      items: [
+        {
+          itemType: 'inventory',
+          inventoryItemId: product,
+          quantity: '1',
+          unitPrice: '100.00',
+        },
+      ],
+      initialPayment: {
+        amount: '25.00',
+        paymentDate: '2026-08-26',
+        paymentMethodId: await methodId('customer', 'cash'),
+      },
+    });
+    assert.equal(quote.body.status_code, 'quote');
+    assert.equal(quote.body.amount_paid, '25.00');
   });
 });
 
