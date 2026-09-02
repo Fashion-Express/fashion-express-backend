@@ -2,11 +2,10 @@ import 'dotenv/config';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { toNodeHandler } from 'better-auth/node';
 import express from 'express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
-import { auth } from './config/auth';
+import { getAuth } from './config/auth';
 import { DatabaseExceptionFilter } from './common/database-exception.filter';
 import { isProduction, loadEnv } from './config/env';
 
@@ -97,7 +96,14 @@ export async function createApp(): Promise<NestExpressApplication> {
 
   // Mounted before the body parsers, and outside Nest's router — better-auth
   // owns every route under this prefix (sign-in, sign-out, session refresh).
-  app.use('/api/auth', toNodeHandler(auth));
+  //
+  // `better-auth/node` is ESM and this file compiles to CommonJS, so it is
+  // loaded with `import()`. config/auth.ts explains why that is not optional:
+  // a `require()` of the `.mjs` build is refused outright by Vercel's function
+  // loader, which is what took the first deployment down before it served a
+  // request.
+  const { toNodeHandler } = await import('better-auth/node');
+  app.use('/api/auth', toNodeHandler(await getAuth()));
 
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
@@ -127,8 +133,16 @@ async function bootstrap(): Promise<void> {
   );
 }
 
-// Only start a server when run directly — importing this module (as the e2e
-// tests do, for `createApp`) must not bind a port.
-if (require.main === module) {
+/**
+ * Start a server unless this module was imported for its `createApp` export.
+ *
+ * `require.main === module` alone is not enough on a serverless host: Vercel
+ * detects `src/main` as the NestJS entry point and *loads* it through its own
+ * module loader rather than running it as the main module, then waits for the
+ * process to listen on `PORT`. Under that guard nothing would ever listen and
+ * every request would time out, so the presence of `VERCEL` counts as "run
+ * directly" too. The e2e suites import this file and set neither.
+ */
+if (require.main === module || process.env.VERCEL) {
   void bootstrap();
 }

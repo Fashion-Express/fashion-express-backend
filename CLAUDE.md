@@ -141,6 +141,12 @@ These have each cost real debugging time.
   `INSERT … RETURNING id` yields `undefined` and a `.length === 0` check never fires,
   so a missing row becomes a silent success. Always go through `rowsOf` / `firstRow`
   / `affectedRows` in `common/sql.ts`.
+- **Never import `better-auth` statically.** It is ESM-only and this bundle is
+  CommonJS, so a top-level import compiles to `require()` of an `.mjs` file.
+  Node allows that; a host that loads the bundle through its own `Module._load`
+  hook need not, and Vercel's does not — `ERR_REQUIRE_ESM` before the first
+  request. Go through `getAuth()` (`config/auth.ts`) or an `await import()`;
+  `import type` is fine, it emits nothing.
 - **Never `@Type(() => Boolean)` on a query parameter.** `Boolean("false")` is
   `true`, so the filter silently means the opposite of what was asked. Use
   `@ToBoolean()` from `common/to-boolean.ts`, which rejects anything it cannot parse.

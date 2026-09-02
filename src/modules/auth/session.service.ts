@@ -1,10 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { fromNodeHeaders } from 'better-auth/node';
 import type { IncomingHttpHeaders } from 'node:http';
 import { DataSource } from 'typeorm';
 import { rowsOf } from '../../common/sql';
-import { auth } from '../../config/auth';
+import { getAuth } from '../../config/auth';
 import type { AuthUser } from './auth-user';
 import { PermissionsService } from './permissions.service';
 
@@ -28,6 +27,14 @@ export class SessionService {
   ) {}
 
   async resolve(headers: IncomingHttpHeaders): Promise<AuthUser | null> {
+    // `better-auth/node` is ESM; see config/auth.ts for why it is loaded this
+    // way rather than imported at the top. Both are memoised, so this is a
+    // resolved promise after the first request.
+    const [{ fromNodeHeaders }, auth] = await Promise.all([
+      import('better-auth/node'),
+      getAuth(),
+    ]);
+
     const session = await auth.api.getSession({
       headers: fromNodeHeaders(headers),
     });

@@ -1,4 +1,3 @@
-import { APIError, createAuthMiddleware, getIP } from 'better-auth/api';
 import type { BetterAuthOptions } from 'better-auth';
 import {
   checkLockout,
@@ -17,7 +16,16 @@ import {
  * Both are deliberately fail-open on their *own* errors: if the lockout table
  * is unreachable, sign-in still works. A brute-force protection that takes the
  * whole login system down with it when it breaks is worse than the attack.
+ *
+ * `better-auth/api` is loaded with `import()` for the reason set out in
+ * config/auth.ts: it is ESM, this bundle is CommonJS, and `require()` of an
+ * `.mjs` file is at the mercy of the host's module loader. The types below are
+ * taken from the module without importing its values, so nothing here emits a
+ * `require`.
  */
+
+type AuthApi = typeof import('better-auth/api');
+type APIError = InstanceType<AuthApi['APIError']>;
 
 /** The endpoints a failed password attempt can come through. */
 const SIGN_IN_PATHS = new Set(['/sign-in/username', '/sign-in/email']);
@@ -43,17 +51,25 @@ function minutesUntil(when: Date): number {
  * can describe: skip it rather than inventing a placeholder that would put
  * every internal call into one shared bucket.
  */
-function clientIp(ctx: {
-  request?: Request;
-  headers?: Headers;
-  context: { options: Parameters<typeof getIP>[1] };
-}): string | undefined {
-  const source = ctx.request ?? ctx.headers;
-  if (!source) return undefined;
-  return getIP(source, ctx.context.options) ?? undefined;
+function makeClientIp(getIP: AuthApi['getIP']) {
+  return (ctx: {
+    request?: Request;
+    headers?: Headers;
+    context: { options: Parameters<AuthApi['getIP']>[1] };
+  }): string | undefined => {
+    const source = ctx.request ?? ctx.headers;
+    if (!source) return undefined;
+    return getIP(source, ctx.context.options) ?? undefined;
+  };
 }
 
-export function buildLockoutHooks(): NonNullable<BetterAuthOptions['hooks']> {
+export async function buildLockoutHooks(): Promise<
+  NonNullable<BetterAuthOptions['hooks']>
+> {
+  const { APIError, createAuthMiddleware, getIP } =
+    await import('better-auth/api');
+  const clientIp = makeClientIp(getIP);
+
   return {
     before: createAuthMiddleware(async (ctx) => {
       if (!SIGN_IN_PATHS.has(ctx.path)) return;

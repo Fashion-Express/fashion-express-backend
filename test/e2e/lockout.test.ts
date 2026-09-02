@@ -7,7 +7,10 @@
 import assert from 'node:assert/strict';
 import { after, before, beforeEach, describe, test } from 'node:test';
 import 'dotenv/config';
-import { auth, authPool } from '../../src/config/auth';
+import { authPool, getAuth } from '../../src/config/auth';
+
+/** better-auth is ESM, so the instance is built on first use. */
+const authApi = async () => (await getAuth()).api;
 import { createCredential } from '../../src/modules/auth/credentials';
 import { checkLockout } from '../../src/modules/auth/login-attempts';
 import {
@@ -26,8 +29,8 @@ const PASSWORD = 'correct-horse-battery';
 const IP = '203.0.113.7';
 
 /** better-auth reads the client IP from headers; x-forwarded-for is the default. */
-function signIn(username: string, password: string, ip = IP) {
-  return auth.api.signInUsername({
+async function signIn(username: string, password: string, ip = IP) {
+  return (await authApi()).signInUsername({
     body: { username, password },
     headers: new Headers({ 'x-forwarded-for': ip }),
     asResponse: true,

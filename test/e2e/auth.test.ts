@@ -18,7 +18,10 @@
 import assert from 'node:assert/strict';
 import { after, before, describe, test } from 'node:test';
 import 'dotenv/config';
-import { auth, authPool } from '../../src/config/auth';
+import { authPool, getAuth } from '../../src/config/auth';
+
+/** better-auth is ESM, so the instance is built on first use. */
+const authApi = async () => (await getAuth()).api;
 import {
   createCredential,
   replaceCredential,
@@ -86,7 +89,9 @@ describe('staff provisioning and sign-in', () => {
 
   test('FR-00.6 signs in by username and opens a session', async () => {
     await provision('probe2');
-    const response = await auth.api.signInUsername({
+    const response = await (
+      await authApi()
+    ).signInUsername({
       body: { username: 'probe2', password: PASSWORD },
       asResponse: true,
     });
@@ -103,8 +108,8 @@ describe('staff provisioning and sign-in', () => {
 
   test('refuses a wrong password', async () => {
     await provision('probe3');
-    await assert.rejects(() =>
-      auth.api.signInUsername({
+    await assert.rejects(async () =>
+      (await authApi()).signInUsername({
         body: { username: 'probe3', password: 'not-the-password' },
       }),
     );
@@ -118,13 +123,17 @@ describe('staff provisioning and sign-in', () => {
    */
   test('resolves a session back to the business columns', async () => {
     await provision('probe4');
-    const response = await auth.api.signInUsername({
+    const response = await (
+      await authApi()
+    ).signInUsername({
       body: { username: 'probe4', password: PASSWORD },
       asResponse: true,
     });
     const cookie = (response.headers.get('set-cookie') ?? '').split(';')[0];
 
-    const session = await auth.api.getSession({
+    const session = await (
+      await authApi()
+    ).getSession({
       headers: new Headers({ cookie }),
     });
     const user = session?.user as unknown as Record<string, unknown>;
@@ -158,13 +167,15 @@ describe('staff provisioning and sign-in', () => {
     const userId = await provision('probe6');
     await replaceCredential(userId, 'a-different-password');
 
-    await assert.rejects(() =>
-      auth.api.signInUsername({
+    await assert.rejects(async () =>
+      (await authApi()).signInUsername({
         body: { username: 'probe6', password: PASSWORD },
       }),
     );
 
-    const response = await auth.api.signInUsername({
+    const response = await (
+      await authApi()
+    ).signInUsername({
       body: { username: 'probe6', password: 'a-different-password' },
       asResponse: true,
     });
