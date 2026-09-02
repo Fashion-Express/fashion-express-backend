@@ -95,7 +95,7 @@ before(async () => {
 
   app = await createApp();
   await app.init();
-  server = app.getHttpServer() as Server;
+  server = app.getHttpServer();
 
   admin = await signIn('moneyadmin');
   finance = await signIn('moneyfin');
