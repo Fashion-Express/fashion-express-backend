@@ -1,0 +1,10 @@
+# Nothing here is needed to build or serve the API, and every file left out is
+# one fewer thing in a 250 MB function bundle.
+test
+api
+scripts/dev-postgres.sh
+.devdb
+storage
+*.md
+*.MD
+!README.md

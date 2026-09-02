@@ -90,6 +90,71 @@ Running it twice is safe — without `--force` it reports the account already
 exists and writes nothing. **Change the default password before the API is
 reachable from anywhere but your machine.**
 
+## Deploying
+
+The application is an ordinary long-lived Node server (`npm run build &&
+npm run start:prod`), and that is the shape it is happiest in: one process, two
+warm connection pools, a writable disk for attachments.
+
+### Vercel
+
+Vercel detects `src/main.ts` as the NestJS entry point and turns the whole app
+into a single Function. Four things had to be true for that to work, and three
+of them are already in the repository:
+
+- **better-auth is loaded with `import()`, never `require()`.** It ships ESM
+  only; this bundle is CommonJS because NestJS needs `emitDecoratorMetadata`,
+  which only `tsc` emits. Node itself has allowed `require()` of ESM since
+  20.19/22.12, but Vercel loads the bundle through its own `Module._load` hook,
+  which refuses it — `ERR_REQUIRE_ESM`, process exit 1, every request a 500.
+  `config/auth.ts` builds the instance behind `getAuth()` for this reason.
+- **`bootstrap()` also runs when `VERCEL` is set.** The host *loads* the entry
+  point rather than running it as the main module, then waits for something to
+  listen on `PORT`; a bare `require.main === module` guard means nothing ever
+  does.
+- **`vercel.json` pins the function to `bom1`.** The database is in
+  `ap-south-1`; the default region is `iad1`. A request here issues several
+  sequential queries, so the wrong region costs a round trip across the planet
+  on each one.
+- **Environment variables must be set in the project** (Settings ->
+  Environment Variables), because `.env` is not deployed: `DATABASE_URL`,
+  `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the deployment's own https URL),
+  `TRUSTED_ORIGINS` (the front end's origin), and `NODE_ENV=production` — which
+  is what turns on secure cookies and HSTS.
+
+Migrations are never applied by the application (NFR-17). Run
+`npm run migration:run` against the production `DATABASE_URL` from a machine
+that has it, then `npm run seed:admin` once.
+
+### What does not survive serverless
+
+Three things behave differently when the app is many short-lived instances
+instead of one process. They are not Vercel bugs; they are consequences of the
+model.
+
+- **Bill-claim attachments are lost.** FR-07.2 writes uploads to
+  `storage/attachments` on local disk (NFR-11). A Function's filesystem is
+  read-only apart from `/tmp`, and `/tmp` belongs to one instance and is
+  discarded — so the upload fails outright, or succeeds and cannot be read back
+  by the next request. Object storage (Vercel Blob, Supabase Storage, S3) is
+  the only fix; `ATTACHMENT_ROOT` covers a mounted volume, not this. Vercel also
+  caps a request body at 4.5 MB, under the 10 MB the route accepts.
+- **The permission cache goes stale (BR-56).** `PermissionsService` caches
+  grants per user type in memory and `invalidate()` clears *that instance's*
+  copy. Every other warm instance keeps serving the old grants until it is
+  recycled, so "the change takes effect immediately" no longer holds. A short
+  TTL bounds it; a shared cache or a `SELECT` per request removes it.
+- **Connections multiply.** Each instance opens its own TypeORM pool (`max: 10`)
+  and better-auth pool (`max: 5`). Point `DATABASE_URL` at Supabase's
+  *transaction* pooler on port 6543 rather than the session pooler on 5432, and
+  lower both maxima — nothing in the code uses `LISTEN`, session-level `SET` or
+  advisory locks, so transaction pooling is safe here.
+
+One more thing to check on the front end: the session cookie is `SameSite=Lax`
+(NFR-09). If the browser app is served from a different site than the API, that
+cookie will not be sent with its requests. Put both behind one domain, or move
+to `SameSite=None; Secure` and accept what that means for CSRF.
+
 ## Status
 
 All seven phases are complete: every functional requirement in
