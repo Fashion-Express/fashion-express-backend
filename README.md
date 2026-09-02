@@ -93,7 +93,7 @@ reachable from anywhere but your machine.**
 ## Status
 
 All seven phases are complete: every functional requirement in
-`REQUIREMENTS.MD` is implemented, with 265 tests covering the business rules.
+`REQUIREMENTS.MD` is implemented, with 282 tests covering the business rules.
 `api/PLANNED.md` records what is deliberately out of scope.
 
 ## API documentation
@@ -109,9 +109,9 @@ what has no routes yet, so the gap is visible rather than discovered.
 ## Tests
 
 ```bash
-npm run test:db        # both suites below (265 tests)
+npm run test:db        # both suites below (282 tests)
 npm run test:schema    # 71 constraint, trigger and error-message tests (Jest)
-npm run test:auth      # 34 identity and API tests (node:test via ts-node)
+npm run test:e2e       # 211 API tests (node:test via ts-node)
 ```
 
 Both need `DATABASE_URL_TEST` and will truncate that database.
