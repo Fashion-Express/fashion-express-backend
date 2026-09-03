@@ -98,9 +98,20 @@ Two things about storage worth knowing:
   filename is a caller-supplied path — `../../etc/passwd`, a null byte, a second
   extension. Generating it removes the whole class of problem, and the response
   carries only the generated name.
-- **Files live outside the application's executable path** (NFR-11), in
-  `storage/attachments`, never inside `dist/`. Fetch one back with
-  `GET /api/bill-claims/:id/attachment`.
+- **Files live outside the application's executable path** (NFR-11) — in
+  `storage/attachments` on a server, or a private Vercel Blob store on a
+  serverless host, never inside `dist/`. Which one is a deployment setting
+  (`ATTACHMENT_STORAGE`); the stored value in `attachment` is the same
+  generated key either way. Fetch one back with
+  `GET /api/bill-claims/:id/attachment`, which is the only way to read it: the
+  blob is private, so there is no URL a client could use directly, and the
+  bytes come back through the same permission check as the claim.
+- **A serverless host caps the upload at 4.5 MB.** The route accepts 10 MB, but
+  on Vercel a larger body is refused by the platform before the function runs.
+- **The file goes when nothing points at it.** Attaching a new document to a
+  pending claim deletes the one it replaces, and withdrawing a claim deletes
+  its attachment. An approved claim keeps both — it is part of the expense
+  record, and `DELETE` refuses it.
 
 ---
 

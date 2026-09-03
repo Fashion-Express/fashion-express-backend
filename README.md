@@ -120,25 +120,61 @@ of them are already in the repository:
   Environment Variables), because `.env` is not deployed: `DATABASE_URL`,
   `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL` (the deployment's own https URL),
   `TRUSTED_ORIGINS` (the front end's origin), and `NODE_ENV=production` — which
-  is what turns on secure cookies and HSTS.
+  is what turns on secure cookies and HSTS. `BLOB_READ_WRITE_TOKEN` is not one
+  of them: Vercel injects it when a Blob store is connected, which is also what
+  switches attachments to it (see below).
 
 Migrations are never applied by the application (NFR-17). Run
 `npm run migration:run` against the production `DATABASE_URL` from a machine
 that has it, then `npm run seed:admin` once.
 
-### What does not survive serverless
+### Bill-claim attachments (FR-07.2)
 
-Three things behave differently when the app is many short-lived instances
+Uploads go to one of two places, and which one is a deployment setting rather
+than a code change:
+
+| `ATTACHMENT_STORAGE` | Where | For |
+|---|---|---|
+| `disk` | `storage/attachments`, outside `dist/` per NFR-11 | a server or a container with a volume |
+| `blob` | a **private** Vercel Blob store, under `bill-claims/attachments/` | a serverless host |
+
+Unset, it follows `BLOB_READ_WRITE_TOKEN`: blob when Vercel has injected one,
+disk otherwise. So connecting a Blob store to the project is the whole setup —
+**Storage → Create → Blob**, connect it to this project, redeploy.
+
+Local disk is not an option on Vercel rather than a worse one: a Function's
+filesystem is read-only apart from `/tmp`, and `/tmp` belongs to one instance
+and is discarded with it, so the upload either fails or cannot be read back by
+the next request.
+
+Three things to know about the blob backend:
+
+- **The blobs are private.** A public blob is readable by anyone holding its
+  URL, which would put a staff member's receipt outside the permission that
+  guards the claim. `GET /api/bill-claims/:id/attachment` reads the object with
+  the store token and streams it, so that route stays the only way in.
+- **The column did not change.** `bill_claims.attachment` holds the same
+  generated `<millis>-<12 hex>.<ext>` key under both backends — disk reads it as
+  a filename, blob as a pathname under the prefix. Moving between them means
+  moving bytes, not rewriting rows.
+- **Vercel caps a request body at 4.5 MB**, under the 10 MB the route accepts,
+  and the platform refuses the larger request before the function is invoked.
+  Direct client uploads (`@vercel/blob/client`) are the way past that, and they
+  would need a token route here and a change on the front end.
+
+Replacing a document or withdrawing a claim deletes the bytes behind it, under
+both backends and only *after* the row stops pointing at them. The delete is
+best-effort: it cannot fail an edit the user has already made, so a store that
+refuses leaves an orphan and a `BillClaimsService` warning naming the key and
+the claim — the only trace it would otherwise have. An approved claim keeps its
+attachment, which is why `DELETE /api/bill-claims/:id` refuses those.
+
+### What else does not survive serverless
+
+Two more things behave differently when the app is many short-lived instances
 instead of one process. They are not Vercel bugs; they are consequences of the
 model.
 
-- **Bill-claim attachments are lost.** FR-07.2 writes uploads to
-  `storage/attachments` on local disk (NFR-11). A Function's filesystem is
-  read-only apart from `/tmp`, and `/tmp` belongs to one instance and is
-  discarded — so the upload fails outright, or succeeds and cannot be read back
-  by the next request. Object storage (Vercel Blob, Supabase Storage, S3) is
-  the only fix; `ATTACHMENT_ROOT` covers a mounted volume, not this. Vercel also
-  caps a request body at 4.5 MB, under the 10 MB the route accepts.
 - **The permission cache goes stale (BR-56).** `PermissionsService` caches
   grants per user type in memory and `invalidate()` clears *that instance's*
   copy. Every other warm instance keeps serving the old grants until it is
@@ -158,7 +194,7 @@ to `SameSite=None; Secure` and accept what that means for CSRF.
 ## Status
 
 All seven phases are complete: every functional requirement in
-`REQUIREMENTS.MD` is implemented, with 282 tests covering the business rules.
+`REQUIREMENTS.MD` is implemented, with 283 tests covering the business rules.
 `api/PLANNED.md` records what is deliberately out of scope.
 
 ## API documentation
@@ -174,9 +210,9 @@ what has no routes yet, so the gap is visible rather than discovered.
 ## Tests
 
 ```bash
-npm run test:db        # both suites below (282 tests)
+npm run test:db        # both suites below (283 tests)
 npm run test:schema    # 71 constraint, trigger and error-message tests (Jest)
-npm run test:e2e       # 211 API tests (node:test via ts-node)
+npm run test:e2e       # 212 API tests (node:test via ts-node)
 ```
 
 Both need `DATABASE_URL_TEST` and will truncate that database.

@@ -49,9 +49,9 @@ npm run migration:revert     # roll back the last one
 npm run db:reset             # drop schema + re-apply everything
 npm run seed:admin           # first Owner account (the API cannot create it)
 
-npm run test:db              # both suites (282 tests)
+npm run test:db              # both suites (283 tests)
 npm run test:schema          # 71 constraint/trigger/message tests (Jest)
-npm run test:e2e             # 211 API tests (node:test via ts-node)
+npm run test:e2e             # 212 API tests (node:test via ts-node)
 ```
 
 Both suites need `DATABASE_URL_TEST` and will truncate that database.
@@ -147,6 +147,13 @@ These have each cost real debugging time.
   hook need not, and Vercel's does not — `ERR_REQUIRE_ESM` before the first
   request. Go through `getAuth()` (`config/auth.ts`) or an `await import()`;
   `import type` is fine, it emits nothing.
+- **Attachments have two backends and one key.** `ATTACHMENT_STORAGE` picks
+  local disk or a private Vercel Blob store (`modules/bill-claims/attachments.ts`);
+  unset, `BLOB_READ_WRITE_TOKEN` decides. The multer engine differs with it —
+  `diskStorage` has already written the file, `memoryStorage` has not — so a
+  route must go through `storeAttachment()` rather than reading `file.filename`,
+  and read back through `openAttachment()`. `bill_claims.attachment` holds the
+  same generated key under both, and is `varchar(100)`: store a key, never a URL.
 - **Never `@Type(() => Boolean)` on a query parameter.** `Boolean("false")` is
   `true`, so the filter silently means the opposite of what was asked. Use
   `@ToBoolean()` from `common/to-boolean.ts`, which rejects anything it cannot parse.

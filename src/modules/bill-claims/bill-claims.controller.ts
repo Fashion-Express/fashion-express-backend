@@ -19,7 +19,9 @@ import { CurrentUser, RequirePermission } from '../auth/decorators';
 import {
   attachmentFilter,
   attachmentStorage,
-  resolveAttachment,
+  openAttachment,
+  storeAttachment,
+  type UploadedAttachment,
 } from './attachments';
 import { BillClaimsService, type ClaimRow } from './bill-claims.service';
 import {
@@ -29,16 +31,12 @@ import {
   UpdateBillClaimDto,
 } from './dto';
 
-/** Multer's file shape, without pulling the whole namespace in. */
-interface UploadedAttachment {
-  filename: string;
-  originalname: string;
-}
-
 const upload = FileInterceptor('attachment', {
   storage: attachmentStorage,
   fileFilter: attachmentFilter,
-  // A supporting document, not a data set.
+  // A supporting document, not a data set. On Vercel this limit is academic:
+  // the platform refuses a request body over 4.5 MB before the function is
+  // invoked, so anything larger fails there rather than here.
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
@@ -76,7 +74,14 @@ export class BillClaimsController {
     return this.claims.findOne(id, user);
   }
 
-  /** FR-07.2 — the supporting document, streamed from outside the app path. */
+  /**
+   * FR-07.2 — the supporting document, streamed from outside the app path.
+   *
+   * The bytes come back through this route whichever backend holds them, and
+   * that is deliberate: it is the only place the claim's scope has been
+   * checked, so handing the caller a store URL instead would put the file
+   * outside the permission that guards it.
+   */
   @Get(':id/attachment')
   @RequirePermission('view_my_bills')
   async attachment(
@@ -85,11 +90,24 @@ export class BillClaimsController {
     @Res() res: Response,
   ): Promise<void> {
     const claim = await this.claims.findOne(id, user);
-    if (!claim.attachment) {
+    const file = claim.attachment
+      ? await openAttachment(claim.attachment)
+      : null;
+    if (!file) {
       res.status(404).json({ statusCode: 404, message: 'No attachment.' });
       return;
     }
-    res.sendFile(resolveAttachment(claim.attachment));
+
+    if (file.kind === 'file') {
+      res.sendFile(file.path);
+      return;
+    }
+
+    // No Content-Disposition, matching sendFile: the front end displays a
+    // receipt image inline, and forcing a download would break that.
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader('Content-Length', file.size);
+    file.stream.pipe(res);
   }
 
   /**
@@ -101,24 +119,24 @@ export class BillClaimsController {
   @Post()
   @RequirePermission('submit_bill')
   @UseInterceptors(upload)
-  create(
+  async create(
     @Body() dto: CreateBillClaimDto,
     @CurrentUser() user: AuthUser,
     @UploadedFile() file?: UploadedAttachment,
   ): Promise<ClaimRow> {
-    return this.claims.create(dto, file?.filename ?? null, user);
+    return this.claims.create(dto, await storeAttachment(file), user);
   }
 
   @Patch(':id')
   @RequirePermission('submit_bill')
   @UseInterceptors(upload)
-  update(
+  async update(
     @Param('id') id: string,
     @Body() dto: UpdateBillClaimDto,
     @CurrentUser() user: AuthUser,
     @UploadedFile() file?: UploadedAttachment,
   ): Promise<ClaimRow> {
-    return this.claims.update(id, dto, file?.filename ?? null, user);
+    return this.claims.update(id, dto, await storeAttachment(file), user);
   }
 
   /**

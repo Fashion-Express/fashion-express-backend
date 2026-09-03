@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
@@ -11,6 +12,7 @@ import { affectedRows, firstRow, rowsOf } from '../../common/sql';
 import { TransactionService } from '../../common/transaction';
 import type { AuthUser } from '../auth/auth-user';
 import { ExpensesService } from '../expenses/expenses.service';
+import { deleteAttachment } from './attachments';
 import type {
   CreateBillClaimDto,
   ListBillClaimsQuery,
@@ -47,6 +49,8 @@ const SELECT_CLAIM = `
 
 @Injectable()
 export class BillClaimsService {
+  private readonly logger = new Logger(BillClaimsService.name);
+
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly transactions: TransactionService,
@@ -216,6 +220,14 @@ export class BillClaimsService {
       `UPDATE bill_claims SET ${sets.join(', ')} WHERE id = $${params.length}`,
       params,
     );
+
+    // The row now points at the new document, so the old one is unreachable.
+    // After the UPDATE, never before: a failed write must leave the claim with
+    // an attachment it can still serve.
+    if (attachment && claim.attachment) {
+      await this.discard(claim.attachment, id);
+    }
+
     return this.findOne(id, user);
   }
 
@@ -303,6 +315,28 @@ export class BillClaimsService {
     );
     if (affectedRows(deleted) === 0)
       throw new NotFoundException('No such claim.');
+
+    // Only once the row is gone. A withdrawn claim is the one case where the
+    // document has no other record referring to it — an *approved* claim keeps
+    // its attachment, which is why `remove` refuses those a few lines up.
+    if (claim.attachment) await this.discard(claim.attachment, id);
+  }
+
+  /**
+   * Drop an attachment nothing points at any more.
+   *
+   * Storage failures are logged, not raised: by the time this runs the claim
+   * has already been updated or withdrawn, and telling the user their edit
+   * failed because a file could not be deleted would be both untrue and
+   * unactionable. What is left behind is an orphan, and the log line is what
+   * makes it findable.
+   */
+  private async discard(key: string, claimId: string): Promise<void> {
+    if (!(await deleteAttachment(key))) {
+      this.logger.warn(
+        `Attachment "${key}" from claim ${claimId} could not be deleted and is now orphaned.`,
+      );
+    }
   }
 
   /**

@@ -7,6 +7,7 @@
  * nothing, and a rebuild that reconciles without duplicating (BR-39).
  */
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
 import { after, before, describe, test } from 'node:test';
 import 'dotenv/config';
 import type { NestExpressApplication } from '@nestjs/platform-express';
@@ -15,6 +16,7 @@ import request from 'supertest';
 import { authPool } from '../../src/config/auth-pool';
 import { createCredential } from '../../src/modules/auth/credentials';
 import { createApp } from '../../src/main';
+import { resolveAttachment } from '../../src/modules/bill-claims/attachments';
 import {
   closePool,
   loadFixture,
@@ -379,6 +381,52 @@ describe('FR-07 bill claims', () => {
     assert.ok(!r.body.attachment.includes('..'));
     assert.ok(!r.body.attachment.includes('/'));
     assert.match(r.body.attachment, /^\d+-[0-9a-f]{12}\.txt$/);
+  });
+
+  /**
+   * FR-07.2 — the document comes back through the route, and nothing outlives
+   * the row that pointed at it.
+   *
+   * The second half is what keeps a store from filling with files no claim
+   * refers to. On disk that is untidy; on a blob store it is a monthly bill,
+   * and there is no other way to find them.
+   */
+  test('an attachment round-trips, and is deleted when it is replaced or withdrawn', async () => {
+    const created = await request(server)
+      .post('/api/bill-claims')
+      .set('Cookie', staff)
+      .field('amount', '120.00')
+      .field('description', 'Taxi')
+      .field('billDate', '2026-08-22')
+      .attach('attachment', Buffer.from('first receipt'), 'first.txt');
+    assert.equal(created.status, 201);
+    const id = created.body.id as string;
+    const first = created.body.attachment as string;
+
+    const fetched = await as(staff).get(`/api/bill-claims/${id}/attachment`);
+    assert.equal(fetched.status, 200);
+    assert.equal(fetched.text, 'first receipt');
+    assert.ok(existsSync(resolveAttachment(first)));
+
+    const replaced = await request(server)
+      .patch(`/api/bill-claims/${id}`)
+      .set('Cookie', staff)
+      .attach('attachment', Buffer.from('second receipt'), 'second.txt');
+    assert.equal(replaced.status, 200);
+    const second = replaced.body.attachment as string;
+    assert.notEqual(second, first);
+    assert.ok(!existsSync(resolveAttachment(first)));
+    assert.ok(existsSync(resolveAttachment(second)));
+
+    assert.equal((await as(staff).del(`/api/bill-claims/${id}`)).status, 204);
+    assert.ok(!existsSync(resolveAttachment(second)));
+
+    // The claim is gone, so the route reports it the way it reports any other
+    // unreachable claim (BR-01's shape: 404, never 403).
+    assert.equal(
+      (await as(staff).get(`/api/bill-claims/${id}/attachment`)).status,
+      404,
+    );
   });
 });
 
