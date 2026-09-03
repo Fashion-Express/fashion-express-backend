@@ -141,12 +141,15 @@ These have each cost real debugging time.
   `INSERT … RETURNING id` yields `undefined` and a `.length === 0` check never fires,
   so a missing row becomes a silent success. Always go through `rowsOf` / `firstRow`
   / `affectedRows` in `common/sql.ts`.
-- **Never import `better-auth` statically.** It is ESM-only and this bundle is
-  CommonJS, so a top-level import compiles to `require()` of an `.mjs` file.
-  Node allows that; a host that loads the bundle through its own `Module._load`
-  hook need not, and Vercel's does not — `ERR_REQUIRE_ESM` before the first
-  request. Go through `getAuth()` (`config/auth.ts`) or an `await import()`;
-  `import type` is fine, it emits nothing.
+- **Never import an ESM-only package statically.** Today that is `better-auth`
+  and `kysely`; the test is the package's own `package.json` (`"type": "module"`
+  with no `require` condition in `exports`), not its name. This bundle is
+  CommonJS, so a top-level import compiles to `require()` of an ES module. Node
+  allows that; a host that loads the bundle through its own `Module._load` hook
+  need not, and Vercel's does not — `ERR_REQUIRE_ESM` before the first request,
+  which is a 500 on every route and nothing in the build log. Go through
+  `getAuth()` (`config/auth.ts`) or an `await import()`; `import type` is fine,
+  it emits nothing. Both of these have bitten this project in production.
 - **Attachments have two backends and one key.** `ATTACHMENT_STORAGE` picks
   local disk or a private Vercel Blob store (`modules/bill-claims/attachments.ts`);
   unset, `BLOB_READ_WRITE_TOKEN` decides. The multer engine differs with it —

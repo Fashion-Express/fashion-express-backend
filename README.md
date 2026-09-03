@@ -102,12 +102,16 @@ Vercel detects `src/main.ts` as the NestJS entry point and turns the whole app
 into a single Function. Four things had to be true for that to work, and three
 of them are already in the repository:
 
-- **better-auth is loaded with `import()`, never `require()`.** It ships ESM
-  only; this bundle is CommonJS because NestJS needs `emitDecoratorMetadata`,
-  which only `tsc` emits. Node itself has allowed `require()` of ESM since
-  20.19/22.12, but Vercel loads the bundle through its own `Module._load` hook,
-  which refuses it — `ERR_REQUIRE_ESM`, process exit 1, every request a 500.
-  `config/auth.ts` builds the instance behind `getAuth()` for this reason.
+- **ESM-only packages are loaded with `import()`, never `require()`.** That is
+  better-auth and kysely; both ship ESM only, and this bundle is CommonJS
+  because NestJS needs `emitDecoratorMetadata`, which only `tsc` emits. Node
+  itself has allowed `require()` of ESM since 20.19/22.12, but Vercel loads the
+  bundle through its own `Module._load` hook, which refuses it —
+  `ERR_REQUIRE_ESM`, process exit 1, every request a 500 with a clean build log.
+  `config/auth.ts` builds the instance behind `getAuth()` and imports both
+  libraries there. The test for a new dependency is its `package.json`, not its
+  name: `"type": "module"` with no `require` condition means it cannot be
+  imported at load time.
 - **`bootstrap()` also runs when `VERCEL` is set.** The host *loads* the entry
   point rather than running it as the main module, then waits for something to
   listen on `PORT`; a bare `require.main === module` guard means nothing ever

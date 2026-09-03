@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import { PostgresDialect } from 'kysely';
 import { authPool } from './auth-pool';
 import { buildLockoutHooks } from '../modules/auth/lockout-hooks';
 import { isProduction, loadEnv } from './env';
@@ -29,17 +28,25 @@ import { isProduction, loadEnv } from './env';
  * below are what actually make this work; do not remove them in favour of
  * `casing`.
  *
- * **Why the library is loaded with `import()` and the instance is built lazily.**
- * better-auth ships ESM only. This project compiles to CommonJS (NestJS needs
- * `emitDecoratorMetadata`, which only `tsc` emits), so a static
- * `import { betterAuth } from 'better-auth'` becomes `require()` of an `.mjs`
- * file. Node has allowed that since 20.19/22.12, but a host that loads the
- * bundle through its own `Module._load` hook does not have to — Vercel's
- * function loader throws `ERR_REQUIRE_ESM` there, and the process exits before
- * the first request is served. A dynamic `import()` is preserved verbatim by
- * `tsc` under `module: nodenext` and works on every runtime, so it is the one
- * form that is not at the mercy of the host's loader. Everything downstream is
- * already async, so `getAuth()` costs nothing but the `await`.
+ * **Why the libraries are loaded with `import()` and the instance is built
+ * lazily.** better-auth ships ESM only, and so does kysely (0.29 is
+ * `"type": "module"` with a single entry and no `require` condition). This
+ * project compiles to CommonJS (NestJS needs `emitDecoratorMetadata`, which
+ * only `tsc` emits), so a static `import { betterAuth } from 'better-auth'`
+ * becomes `require()` of an ES module. Node has allowed that since
+ * 20.19/22.12, but a host that loads the bundle through its own `Module._load`
+ * hook does not have to — Vercel's function loader throws `ERR_REQUIRE_ESM`
+ * there, and the process exits before the first request is served. A dynamic
+ * `import()` is preserved verbatim by `tsc` under `module: nodenext` and works
+ * on every runtime, so it is the one form that is not at the mercy of the
+ * host's loader. Everything downstream is already async, so `getAuth()` costs
+ * nothing but the `await`.
+ *
+ * This bit twice: better-auth first, then `PostgresDialect` from kysely, which
+ * sat two lines above this comment as a plain import and took down the first
+ * deployment that got as far as serving a request. The rule is the package's
+ * module format, not the package's name — before adding a dependency that is
+ * imported at load time, check that it has a CommonJS entry.
  */
 
 /** Business columns better-auth must never write. See `input: false` below. */
@@ -50,10 +57,9 @@ export { authPool };
 
 async function buildAuth() {
   const env = loadEnv();
-  const [{ betterAuth }, { username }] = await Promise.all([
-    import('better-auth'),
-    import('better-auth/plugins'),
-  ]);
+  const [{ betterAuth }, { username }, { PostgresDialect }] = await Promise.all(
+    [import('better-auth'), import('better-auth/plugins'), import('kysely')],
+  );
 
   return betterAuth({
     database: {
