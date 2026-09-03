@@ -112,10 +112,14 @@ of them are already in the repository:
   libraries there. The test for a new dependency is its `package.json`, not its
   name: `"type": "module"` with no `require` condition means it cannot be
   imported at load time.
-- **`bootstrap()` also runs when `VERCEL` is set.** The host *loads* the entry
-  point rather than running it as the main module, then waits for something to
-  listen on `PORT`; a bare `require.main === module` guard means nothing ever
-  does.
+- **`main.ts` default-exports a request handler.** The host loads the entry
+  point and calls what it exports; it does not run the file as a program and
+  wait for a port. Without a default export the process exits 1 with `Invalid
+  export found in module "/var/task/src/main.js"` and every request is a 500,
+  with a build log that looks perfectly healthy. The handler runs `app.init()`
+  on the same `createApp()` the local server uses and hands the Express
+  instance the request, memoised so a warm instance bootstraps once. `listen()`
+  belongs to `npm run start:prod`, under `require.main === module`.
 - **`vercel.json` pins the function to `bom1`.** The database is in
   `ap-south-1`; the default region is `iad1`. A request here issues several
   sequential queries, so the wrong region costs a round trip across the planet

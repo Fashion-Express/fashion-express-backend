@@ -134,15 +134,55 @@ async function bootstrap(): Promise<void> {
 }
 
 /**
- * Start a server unless this module was imported for its `createApp` export.
+ * Start a server only when this file is *run*, not when it is imported.
  *
- * `require.main === module` alone is not enough on a serverless host: Vercel
- * detects `src/main` as the NestJS entry point and *loads* it through its own
- * module loader rather than running it as the main module, then waits for the
- * process to listen on `PORT`. Under that guard nothing would ever listen and
- * every request would time out, so the presence of `VERCEL` counts as "run
- * directly" too. The e2e suites import this file and set neither.
+ * The e2e suites import it for `createApp`, and a serverless host imports it
+ * for the default export below; neither wants a listening socket.
  */
-if (require.main === module || process.env.VERCEL) {
+if (require.main === module) {
   void bootstrap();
+}
+
+/**
+ * The serverless entry point.
+ *
+ * Vercel loads `src/main.js` through its own module loader and requires a
+ * default export that is "a function or server" — it does not run the file as
+ * a program and then wait for it to listen, which is what an earlier version of
+ * this file assumed. Without this export the process exits 1 with `Invalid
+ * export found in module` and every request is a 500 that the build log gives
+ * no hint of.
+ *
+ * So: no `listen()`. `app.init()` wires the same application the local server
+ * runs — every pipe, filter and the hand-mounted better-auth handler, because
+ * all of that lives in `createApp()` — and the Express instance underneath it
+ * is itself a `(req, res)` function, which is exactly what the host wants to
+ * call.
+ *
+ * The promise is memoised at module scope so a warm instance pays the Nest
+ * bootstrap once rather than per request, and cleared on failure so a cold
+ * start that loses the database does not leave every later request holding a
+ * rejected promise it can never recover from.
+ */
+let started: Promise<NestExpressApplication> | undefined;
+
+function serverlessApp(): Promise<NestExpressApplication> {
+  started ??= (async () => {
+    const app = await createApp();
+    await app.init();
+    return app;
+  })().catch((error: unknown) => {
+    started = undefined;
+    throw error;
+  });
+
+  return started;
+}
+
+export default async function handler(
+  req: express.Request,
+  res: express.Response,
+): Promise<void> {
+  const app = await serverlessApp();
+  app.getHttpAdapter().getInstance()(req, res);
 }
