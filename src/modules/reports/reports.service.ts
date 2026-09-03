@@ -34,9 +34,14 @@ export class ReportsService {
 
     const trading = firstRow<Record<string, string>>(
       await this.dataSource.query(
+        // BR-67 — `invoiced` stays net of discount, because that is what was
+        // actually billed. `discounted` is reported beside it rather than added
+        // back into it, so what was given away is visible without inflating
+        // revenue that was never charged.
         `SELECT COALESCE(SUM(total_amount), 0)::text AS invoiced,
                 COALESCE(SUM(amount_paid), 0)::text  AS received,
-                COALESCE(SUM(total_amount - amount_paid), 0)::text AS outstanding
+                COALESCE(SUM(total_amount - amount_paid), 0)::text AS outstanding,
+                COALESCE(SUM(discount_amount), 0)::text AS discounted
            FROM sales WHERE status_code = 'finalized'`,
       ),
     )!;

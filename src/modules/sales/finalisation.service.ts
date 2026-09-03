@@ -298,6 +298,7 @@ export class FinalisationService {
         id: string;
         sale_number: string;
         status_code: string;
+        discount_amount: string;
       }>(manager, 'sales', saleId);
       if (!sale) throw new NotFoundException('No such sale.');
 
@@ -327,6 +328,30 @@ export class FinalisationService {
       if (willBeEmpty && sale.status_code === 'finalized') {
         // Before the line goes — see the note above.
         paymentsRemoved = await this.payments.removeAllForSale(manager, saleId);
+      }
+
+      /*
+       * BR-67 — and before the line goes, for exactly the reason the payments
+       * above go first.
+       *
+       * `total_amount` is the line subtotal *minus* the discount (migration
+       * 021). Emptying the sale takes the subtotal to zero, so a discount left
+       * attached would drive the total negative and `sale_not_overpaid` would
+       * refuse the DELETE outright — FR-02.6.2's "removing the last line
+       * reverts the sale to draft" would stop working for any sale that had
+       * ever been discounted.
+       *
+       * Unlike the payments above this is not conditional on the sale being
+       * finalised: a draft carries a discount too, and empties the same way.
+       */
+      if (willBeEmpty && new Decimal(sale.discount_amount).greaterThan(0)) {
+        await manager.query(
+          `UPDATE sales
+              SET discount_amount = 0, discount_reason = NULL,
+                  discounted_by_id = NULL, discounted_at = NULL
+            WHERE id = $1`,
+          [saleId],
+        );
       }
 
       // BR-12 — return the stock, with a reversing movement naming the sale.

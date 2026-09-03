@@ -888,3 +888,192 @@ describe('FR-08 the ledger still reconciles', () => {
     assert.equal(Number(balance), Number(credits) - Number(debits));
   });
 });
+
+describe('FR-02.5a / BR-67..BR-69 the sale discount', () => {
+  async function saleOf(total = '1000'): Promise<string> {
+    const product = await stockedProduct();
+    const sale = await as(admin).post('/api/sales', {
+      customerId: await customerId(),
+      shopId: '1',
+      items: [
+        {
+          itemType: 'inventory',
+          inventoryItemId: product,
+          quantity: '1',
+          unitPrice: total,
+        },
+      ],
+    });
+    await as(admin).post(`/api/sales/${sale.body.id}/finalize`);
+    return sale.body.id as string;
+  }
+
+  const pay = async (id: string, amount: string) =>
+    as(admin).post(`/api/sales/${id}/payments`, {
+      amount,
+      paymentDate: '2026-08-26',
+      paymentMethodId: await methodId('customer', 'cash'),
+    });
+
+  test('reduces the payable total and records who applied it', async () => {
+    const id = await saleOf('1000');
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '200.00',
+      reason: 'Damaged packaging',
+    });
+
+    assert.equal(r.status, 200);
+    assert.equal(r.body.discount_amount, '200.00');
+    assert.equal(r.body.total_amount, '800.00');
+    assert.equal(r.body.balance_due, '800.00');
+    // The line subtotal is recovered, not stored — the invoice needs both.
+    assert.equal(r.body.subtotal_amount, '1000.00');
+    assert.equal(r.body.discount_reason, 'Damaged packaging');
+    assert.ok(r.body.discounted_at);
+    assert.ok(r.body.discounted_by);
+  });
+
+  test('BR-67 a discount is not a payment — amount_paid is untouched', async () => {
+    const id = await saleOf('1000');
+    await as(admin).patch(`/api/sales/${id}/discount`, { amount: '300.00' });
+    const r = await as(admin).get(`/api/sales/${id}`);
+    assert.equal(r.body.amount_paid, '0.00');
+    assert.equal(r.body.total_amount, '700.00');
+  });
+
+  test('BR-68 refuses a discount larger than the sale itself', async () => {
+    const id = await saleOf('1000');
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '1500.00',
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.body.message, /cannot exceed the 1000.00/);
+  });
+
+  test('BR-68 refuses a discount that undercuts what is already paid', async () => {
+    const id = await saleOf('1000');
+    await pay(id, '800.00');
+
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '300.00',
+    });
+    assert.equal(r.status, 400);
+    // The message must name the ceiling, not just refuse.
+    assert.match(r.body.message, /most you can discount is 200.00/);
+  });
+
+  test('BR-68 allows a discount down to exactly the amount paid', async () => {
+    const id = await saleOf('1000');
+    await pay(id, '800.00');
+
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '200.00',
+    });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.total_amount, '800.00');
+    assert.equal(r.body.balance_due, '0.00');
+  });
+
+  test('BR-69 freezes the discount once the sale is settled', async () => {
+    const id = await saleOf('1000');
+    await pay(id, '1000.00');
+
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '50.00',
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.body.message, /fully paid/);
+  });
+
+  test('a second call replaces the discount rather than adding to it', async () => {
+    const id = await saleOf('1000');
+    await as(admin).patch(`/api/sales/${id}/discount`, { amount: '100.00' });
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '250.00',
+    });
+    assert.equal(r.body.discount_amount, '250.00');
+    assert.equal(r.body.total_amount, '750.00');
+  });
+
+  test('zero clears the discount and its author, restoring the total', async () => {
+    const id = await saleOf('1000');
+    await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '200.00',
+      reason: 'Goodwill',
+    });
+
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, { amount: '0' });
+    assert.equal(r.status, 200);
+    assert.equal(r.body.discount_amount, '0.00');
+    assert.equal(r.body.total_amount, '1000.00');
+    // The biconditional constraint requires the attribution to go too.
+    assert.equal(r.body.discounted_at, null);
+    assert.equal(r.body.discounted_by, null);
+  });
+
+  test('BR-67 a cancelled sale cannot be discounted', async () => {
+    // Deliberately NOT finalised: a finalised sale cannot change state at all,
+    // so cancelling one is refused long before the discount is reached.
+    const product = await stockedProduct();
+    const sale = await as(admin).post('/api/sales', {
+      customerId: await customerId(),
+      shopId: '1',
+      items: [
+        {
+          itemType: 'inventory',
+          inventoryItemId: product,
+          quantity: '1',
+          unitPrice: '1000',
+        },
+      ],
+    });
+    const id = sale.body.id as string;
+
+    const cancelled = await as(admin).patch(`/api/sales/${id}`, {
+      status: 'cancelled',
+    });
+    assert.equal(cancelled.body.status_code, 'cancelled');
+
+    const r = await as(admin).patch(`/api/sales/${id}/discount`, {
+      amount: '10.00',
+    });
+    assert.equal(r.status, 400);
+    assert.match(r.body.message, /cancelled/);
+  });
+
+  test('a later line change keeps the discount applied', async () => {
+    const id = await saleOf('1000');
+    await as(admin).patch(`/api/sales/${id}/discount`, { amount: '200.00' });
+
+    const product = await stockedProduct();
+    await as(admin).post(`/api/sales/${id}/items`, {
+      itemType: 'inventory',
+      inventoryItemId: product,
+      quantity: '1',
+      unitPrice: '500.00',
+    });
+
+    const r = await as(admin).get(`/api/sales/${id}`);
+    assert.equal(r.body.subtotal_amount, '1500.00');
+    assert.equal(r.body.total_amount, '1300.00');
+  });
+
+  /*
+   * FR-02.6.2 — the regression this rule most easily breaks. Emptying the sale
+   * takes the subtotal to zero; a discount left attached would drive the total
+   * negative and `sale_not_overpaid` would refuse the deletion outright, so the
+   * documented revert-to-draft would stop working for any discounted sale.
+   */
+  test('FR-02.6.2 removing the last line of a discounted sale still reverts it', async () => {
+    const id = await saleOf('1000');
+    await as(admin).patch(`/api/sales/${id}/discount`, { amount: '200.00' });
+
+    const items = await as(admin).get(`/api/sales/${id}/items`);
+    const r = await as(admin).del(`/api/sales/${id}/items/${items.body[0].id}`);
+
+    assert.equal(r.status, 200);
+    assert.equal(r.body.revertedToDraft, true);
+    assert.equal(r.body.sale.discount_amount, '0.00');
+    assert.equal(r.body.sale.total_amount, '0.00');
+  });
+});

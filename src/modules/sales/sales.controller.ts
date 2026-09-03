@@ -22,6 +22,7 @@ import {
   CreateSalePaymentDto,
   CustomerPaymentDto,
   ListSalesQuery,
+  SaleDiscountDto,
   UpdateSaleDto,
   UpdateSalePaymentDto,
 } from './dto';
@@ -124,6 +125,27 @@ export class SalesController {
       ...result,
       sale: await this.sales.findOne(id, user),
     };
+  }
+
+  /**
+   * BR-67..BR-69 — the sale's one discount.
+   *
+   * PATCH rather than POST because this replaces a value on the sale rather
+   * than adding a record to it: a sale has at most one discount, and sending
+   * it twice must not mean two. `amount: "0"` clears it, so there is no DELETE.
+   *
+   * `change_sale`, not a discount permission of its own — whoever may edit the
+   * sale may price it.
+   */
+  @Patch('sales/:id/discount')
+  @RequirePermission('change_sale')
+  async setDiscount(
+    @Param('id') id: string,
+    @Body() dto: SaleDiscountDto,
+    @CurrentUser() user: AuthUser,
+  ): Promise<SaleRow> {
+    await this.sales.setDiscount(id, dto, user);
+    return this.sales.findOne(id, user);
   }
 
   /** BR-14 — only draft sales may be deleted. */

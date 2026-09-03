@@ -10,12 +10,13 @@ import { Decimal } from '../../common/decimal';
 import { nextSaleNumber } from '../../common/identifiers';
 import { PAGE_SIZE, type Page, toPage } from '../../common/pagination';
 import { affectedRows, firstRow, rowsOf } from '../../common/sql';
-import { TransactionService } from '../../common/transaction';
+import { TransactionService, lockRow } from '../../common/transaction';
 import type { AuthUser } from '../auth/auth-user';
 import { SalePaymentsService } from './sale-payments.service';
 import type {
   CreateSaleDto,
   ListSalesQuery,
+  SaleDiscountDto,
   SaleItemDto,
   UpdateSaleDto,
 } from './dto';
@@ -29,6 +30,12 @@ export interface SaleRow {
   total_amount: string;
   amount_paid: string;
   balance_due: string;
+  /** BR-67 — the discount, and the line subtotal it was taken off. */
+  discount_amount: string;
+  subtotal_amount: string;
+  discount_reason: string | null;
+  discounted_at: string | null;
+  discounted_by: string | null;
   notes: string;
   finalized_at: string | null;
   created_at: string;
@@ -45,6 +52,12 @@ const SELECT_SALE = `
   SELECT s.id::text, s.sale_number, s.status_code, st.label AS status_label,
          s.total_amount::text, s.amount_paid::text,
          (s.total_amount - s.amount_paid)::text AS balance_due,
+         s.discount_amount::text,
+         -- BR-67: total_amount is already net of the discount, so the line
+         -- subtotal is recovered rather than stored. Added here, in numeric,
+         -- rather than in the client: NFR-01 keeps money arithmetic out of JS.
+         (s.total_amount + s.discount_amount)::text AS subtotal_amount,
+         s.discount_reason, s.discounted_at, du.username AS discounted_by,
          s.notes, s.finalized_at, s.created_at,
          s.customer_id::text, c.name AS customer_name, c.customer_id AS customer_number,
          s.shop_id::text, sh.name AS shop_name,
@@ -53,7 +66,8 @@ const SELECT_SALE = `
     JOIN statuses st ON st.id = s.status_id AND st.scope = 'sale'
     JOIN customers c ON c.id = s.customer_id
     JOIN shops sh    ON sh.id = s.shop_id
-    LEFT JOIN users u ON u.id = s.created_by_id`;
+    LEFT JOIN users u ON u.id = s.created_by_id
+    LEFT JOIN users du ON du.id = s.discounted_by_id`;
 
 @Injectable()
 export class SalesService {
@@ -472,6 +486,107 @@ export class SalesService {
   /** Shared by the paths that may only act on a sale the caller can see. */
   async assertVisible(id: string, user: AuthUser): Promise<SaleRow> {
     return this.findOne(id, user);
+  }
+
+  /**
+   * BR-67..BR-69 — set, change or clear the sale's one discount.
+   *
+   * A discount is not a payment (BR-67): it moves no cash, earns no receipt
+   * number and posts nothing to the ledger. It reduces what is owed, and
+   * `total_amount` is recomputed from it by the trigger in migration 021 — this
+   * method never writes that column, exactly as §11 requires of every derived
+   * value.
+   *
+   * The three refusals below are checked here rather than left to the database
+   * because the constraints cannot say anything useful about *this* operation.
+   * `sale_not_overpaid` fires for both an over-large discount and one that
+   * undercuts a payment — and its message speaks about payments exceeding the
+   * sale, which is the wrong sentence for someone who typed a discount. The
+   * constraints remain the backstop for a race this check loses (§16).
+   */
+  async setDiscount(
+    id: string,
+    dto: SaleDiscountDto,
+    user: AuthUser,
+  ): Promise<void> {
+    await this.assertVisible(id, user); // BR-01
+
+    const amount = new Decimal(dto.amount);
+    if (amount.isNegative()) {
+      throw new BadRequestException('A discount cannot be negative.');
+    }
+
+    await this.transactions.run(async (manager) => {
+      const sale = await lockRow<{
+        id: string;
+        status_code: string;
+        total_amount: string;
+        amount_paid: string;
+        discount_amount: string;
+      }>(manager, 'sales', id);
+      if (!sale) throw new NotFoundException('No such sale.');
+
+      if (sale.status_code === 'cancelled') {
+        throw new BadRequestException('A cancelled sale cannot be discounted.');
+      }
+      /*
+       * BR-02/BR-03 — a quotation counts toward no revenue and reserves no
+       * stock. Discounting one would be discounting a number that does not yet
+       * mean anything; the price to change is the line price.
+       */
+      if (sale.status_code === 'quote') {
+        throw new BadRequestException(
+          'A quotation cannot be discounted. Convert it to a draft invoice first.',
+        );
+      }
+
+      const paid = new Decimal(sale.amount_paid);
+      const total = new Decimal(sale.total_amount);
+      // total_amount is already net of any discount, so the line subtotal has
+      // to be put back together before anything can be measured against it.
+      const subtotal = total.plus(sale.discount_amount);
+
+      // BR-69 — a settled sale is closed to further discounting.
+      if (total.greaterThan(0) && paid.greaterThanOrEqualTo(total)) {
+        throw new BadRequestException(
+          'This sale is fully paid. Its discount can no longer be changed.',
+        );
+      }
+
+      // BR-68 — bounded above by the subtotal and below by what is already paid.
+      const ceiling = subtotal.minus(paid);
+      if (amount.greaterThan(ceiling)) {
+        throw new BadRequestException(
+          paid.isZero()
+            ? `A discount cannot exceed the ${subtotal.toFixed(2)} this sale is for.`
+            : `That discount would leave the sale below the ${paid.toFixed(2)} already paid. The most you can discount is ${ceiling.toFixed(2)}.`,
+        );
+      }
+
+      /*
+       * Clearing the discount must clear its author too, or
+       * `sale_discount_has_author` refuses the row — the biconditional is what
+       * stops a stale "discounted by" surviving a discount of zero.
+       */
+      const clearing = amount.isZero();
+      await manager.query(
+        `UPDATE sales
+            SET discount_amount  = $2,
+                discount_reason  = $3,
+                discounted_by_id = $4,
+                discounted_at    = $5,
+                updated_by_id    = $6
+          WHERE id = $1`,
+        [
+          id,
+          amount.toFixed(2),
+          clearing ? null : (dto.reason ?? null),
+          clearing ? null : user.id,
+          clearing ? null : new Date(),
+          user.id,
+        ],
+      );
+    });
   }
 
   /** FR-02.6.1 — adding or removing a line on a finalised sale is admin-only. */

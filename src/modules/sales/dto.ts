@@ -137,3 +137,19 @@ export class CustomerPaymentDto {
 }
 
 export class AddSaleItemDto extends SaleItemDto {}
+
+/**
+ * BR-67..BR-69 — the sale-level discount.
+ *
+ * A fixed amount only; no percentage is accepted or stored. `amount: "0"`
+ * removes an existing discount, which is why there is no separate delete route.
+ * Sent as a decimal string like every other money field (NFR-01).
+ */
+export class SaleDiscountDto {
+  @IsNumberString({}, { message: 'amount must be a decimal string' })
+  amount!: string;
+
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}

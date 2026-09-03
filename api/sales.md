@@ -218,6 +218,57 @@ remove them; the ledger entry follows both (BR-40).
 
 ---
 
+## `PATCH /api/sales/:id/discount`
+
+FR-02.5a — the sale's one discount. `change_sale`.
+
+PATCH, not POST: a sale has at most one discount, so sending this twice replaces
+it rather than adding a second. There is no DELETE — `amount: "0"` clears it,
+along with the reason and the attribution.
+
+```bash
+curl -X PATCH localhost:3000/api/sales/12/discount \
+  -H 'Content-Type: application/json' -b cookies.txt \
+  -d '{"amount":"200.00","reason":"Damaged packaging"}'
+```
+
+Returns the refreshed sale. `total_amount` is already **net** of the discount —
+that is the amount payable, and it is what `balance_due` is measured from.
+`subtotal_amount` is the line total before it:
+
+```json
+{
+  "id": "12",
+  "subtotal_amount": "1000.00",
+  "discount_amount": "200.00",
+  "total_amount": "800.00",
+  "amount_paid": "0.00",
+  "balance_due": "800.00",
+  "discount_reason": "Damaged packaging",
+  "discounted_by": "admin",
+  "discounted_at": "2026-09-03T11:22:04.517Z"
+}
+```
+
+A discount is **not a payment** (BR-67): `amount_paid` does not move, no receipt
+number is issued, and nothing is posted to the ledger.
+
+### Errors
+
+| Case | Status | Message |
+|------|--------|---------|
+| Above the line subtotal (BR-68) | 400 | `A discount cannot exceed the 1000.00 this sale is for.` |
+| Below what is already paid (BR-68) | 400 | `That discount would leave the sale below the 800.00 already paid. The most you can discount is 200.00.` |
+| Sale fully settled (BR-69) | 400 | `This sale is fully paid. Its discount can no longer be changed.` |
+| Cancelled sale (BR-69) | 400 | `A cancelled sale cannot be discounted.` |
+| Quotation (BR-69) | 400 | `A quotation cannot be discounted. Convert it to a draft invoice first.` |
+| Negative amount | 400 | `A discount cannot be negative.` |
+
+A discount survives later line edits — adding a 500 line to a 1000 sale
+discounted by 200 gives a subtotal of 1500 and a total of 1300. It does **not**
+survive the sale being emptied: removing the last line clears the discount along
+with the payments (FR-02.6.2), because a sale with no lines cannot carry one.
+
 ## Editing a finalised sale (FR-02.6)
 
 **Restricted to administrators** — a manager can *see* a finalised sale but not
