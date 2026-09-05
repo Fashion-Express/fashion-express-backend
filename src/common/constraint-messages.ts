@@ -17,6 +17,9 @@ export const CONSTRAINT_MESSAGES: Record<string, string> = {
   sale_finalized_has_timestamp:
     'A finalised sale must record when it was finalised, and only a finalised sale may.', // BR-07
   sale_totals_non_negative: 'Sale totals cannot be negative.',
+  sale_discount_non_negative: 'A discount cannot be negative.', // BR-67
+  sale_discount_has_author:
+    'A discount must record who applied it, and clearing one must clear that too.', // BR-67
   saleitem_kind_consistent:
     'A stocked line must reference an inventory item and a machine line must carry a description — never both, never neither.', // BR-04
   saleitem_quantity_positive:

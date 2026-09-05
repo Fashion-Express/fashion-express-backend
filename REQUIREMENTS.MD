@@ -653,6 +653,31 @@ invoiced. Such a payment counts toward no revenue or outstanding figure until
 the sale is finalised, and it is carried over when a quotation is converted to a
 draft invoice (FR-02.3.1).
 
+#### FR-02.5a — Discount
+
+- A sale may carry **one** discount: a fixed amount that reduces what the customer
+  owes. It is applied through its own action, never bundled into finalising, and
+  is gated by the same permission as editing the sale's other details.
+- Applying one records the amount, an optional reason, who applied it and when —
+  the same attribution finalisation keeps in `finalized_by_id`/`finalized_at`.
+- It may be changed or cleared while any balance remains, and is fixed once the
+  sale is fully settled.
+
+**BR-67** — A discount is **not a payment**. It moves no cash, earns no receipt
+number and posts nothing to the ledger; it reduces the amount payable. A sale
+carries at most one, and clearing it clears its attribution with it.
+
+**BR-68** — A discount may not exceed the sale's line subtotal, and may not reduce
+the payable total below what has already been paid against the sale. The ceiling
+is therefore the subtotal minus the amount paid. This is the same inequality
+BR-09 already enforces for payments, applied from the other direction — and it is
+the same `sale_not_overpaid` constraint that enforces both.
+
+**BR-69** — A discount may be changed or cleared only while the sale has an
+outstanding balance. Once it is fully settled it is fixed, and a cancelled sale
+cannot be discounted at all. A quotation cannot be discounted either: it counts
+toward no revenue (BR-03), so the number to change on an offer is the line price.
+
 #### FR-02.6 — Editing a finalised sale
 
 **FR-02.6.1** — Adding or removing a line on an already-finalised sale is restricted to
@@ -1176,7 +1201,7 @@ assets served independently of the application process.
 The following are explicitly **not** required:
 
 - Multi-currency and foreign exchange.
-- Tax calculation, VAT handling, and discount rules.
+- Tax calculation and VAT handling.
 - A machine catalogue — machines are one-off free-text lines and are never stocked.
 - Integration with external accounting packages beyond spreadsheet export.
 - Per-line payment allocation. Payments apply at the sale level.

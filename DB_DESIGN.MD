@@ -1389,7 +1389,7 @@ Three columns in this schema are **caches of an aggregate over child rows**:
 | Column | Aggregate |
 |--------|-----------|
 | `sale_items.line_total` | `quantity × unit_price` |
-| `sales.total_amount` | `SUM(line_total)` over the sale's items |
+| `sales.total_amount` | `SUM(line_total)` over the sale's items, **less `discount_amount`** (BR-67) |
 | `sales.amount_paid` **[H]** | `SUM(amount)` over the sale's payments |
 | `supplier_purchases.paid_amount` | `SUM(amount)` over the purchase's payments |
 
@@ -1427,6 +1427,39 @@ LANGUAGE sql AS $$
             (SELECT SUM(p.amount) FROM sale_payments p WHERE p.sale_id = s.id), 0)
     WHERE s.id = p_sale_id;
 $$;
+
+-- BR-67 — the discount, folded into the payable total.
+--
+-- `total_amount` keeps its meaning (what the customer owes), so every reader of
+-- it stays correct: FR-09's invoiced/outstanding, the statement's balance due,
+-- the FR-03.5 allocator, and `sale_not_overpaid` itself. The line subtotal is
+-- recovered as `total_amount + discount_amount` rather than stored again.
+--
+-- Folding it in is also what puts the discount inside reach of the CHECK
+-- constraints already on the table: a discount over the subtotal drives the
+-- total negative, and one that undercuts a payment breaks BR-09's inequality.
+-- Neither needed a new constraint.
+--
+-- The rollup above fires on sale_items and sale_payments only, so a direct
+-- `UPDATE sales SET discount_amount` would leave total_amount stale. This
+-- BEFORE trigger closes that. It cannot recurse: it assigns to NEW and issues
+-- no statement, and its WHEN clause keeps it out of the rollup's own UPDATEs.
+
+CREATE OR REPLACE FUNCTION fe_sale_discount_changed() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+    NEW.total_amount := COALESCE(
+        (SELECT SUM(i.line_total) FROM sale_items i WHERE i.sale_id = NEW.id), 0)
+        - NEW.discount_amount;
+    RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_sale_discount
+    BEFORE UPDATE ON sales
+    FOR EACH ROW
+    WHEN (OLD.discount_amount IS DISTINCT FROM NEW.discount_amount)
+    EXECUTE FUNCTION fe_sale_discount_changed();
 
 CREATE OR REPLACE FUNCTION fe_sale_child_changed() RETURNS trigger
 LANGUAGE plpgsql AS $$

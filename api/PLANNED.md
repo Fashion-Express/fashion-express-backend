@@ -7,7 +7,7 @@ mistaken for an omission.
 ## Explicitly out of scope (§7)
 
 - **Multi-currency and foreign exchange.** One currency, Bangladeshi Taka.
-- **Tax, VAT and discount rules.** No line or document carries either.
+- **Tax and VAT rules.** No line or document carries either. Discounts shipped — see FR-02.5a.
 - **A machine catalogue.** Machines are one-off free-text lines and are never
   stocked — which is why a sale line is two structurally different records
   sharing a table (BR-04).
